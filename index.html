@@ -10,11 +10,11 @@
     <meta property="og:title" content="Blue Bird Enterprises | Industrial Cleaning, Drainage & Civil Engineering" />
     <meta property="og:description" content="Specialized vacuum suction tankers, high-pressure drain jetting, ETP/STP tank cleaning, and civil infrastructure services based in Turbhe MIDC, Navi Mumbai." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg" />
+    <meta property="og:image" content="./assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Blue Bird Enterprises - Industrial Cleaning & Civil Engineering" />
     <meta name="twitter:description" content="20+ Years Field Excellence in Industrial Suction Tankers, Drainage Maintenance & Civil Works in Navi Mumbai." />
-    <meta name="twitter:image" content="/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg" />
+    <meta name="twitter:image" content="./assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg" />
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
       "@context": "https://schema.org",
       "@type": "LocalBusiness",
       "name": "Blue Bird Enterprises",
-      "image": "/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg",
+      "image": "./assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg",
       "telephone": ["+91 98678 33456", "+91 99873 24798"],
       "email": "surupiwal@gmail.com",
       "founder": {
@@ -52,10 +52,33 @@
       "description": "Industrial cleaning, mechanized suction tanker services, drainage management, ETP/STP desludging, and civil engineering infrastructure contractor in Navi Mumbai, Maharashtra."
     }
     </script>
+    <script>
+      window.__LOAD_GH_FALLBACK = function () {
+        if (window.__GH_FALLBACK_LOADED__ || window.__BLUEBIRD_MOUNTED__) return;
+        window.__GH_FALLBACK_LOADED__ = true;
+        window.__RAW_GH_PAGES__ = true;
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = './public/gh-pages-bundle/app.css';
+        document.head.appendChild(link);
+        var script = document.createElement('script');
+        script.type = 'module';
+        script.src = './public/gh-pages-bundle/app.js';
+        document.body.appendChild(script);
+      };
+    </script>
   </head>
   <body class="bg-slate-50 text-slate-800 antialiased font-sans selection:bg-blue-600 selection:text-white">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx" onerror="window.__LOAD_GH_FALLBACK && window.__LOAD_GH_FALLBACK()"></script>
+    <script>
+      setTimeout(function () {
+        var root = document.getElementById('root');
+        if (!window.__BLUEBIRD_MOUNTED__ && root && root.children.length === 0 && window.__LOAD_GH_FALLBACK) {
+          window.__LOAD_GH_FALLBACK();
+        }
+      }, 1200);
+    </script>
   </body>
 </html>
 

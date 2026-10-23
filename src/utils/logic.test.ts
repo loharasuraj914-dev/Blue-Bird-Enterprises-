@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateIndianPhone, validateEmail, cleanPhoneNumber } from './validation.ts';
-import { calculateQuotationTotals, formatINR, generateQuotationNumber } from './quotation.ts';
+import {
+  validateIndianPhone,
+  validateEmail,
+  cleanPhoneNumber,
+  sanitizeTenDigitMobile,
+  validateQuoteMandatoryFields,
+} from './validation.ts';
+import {
+  calculateQuotationTotals,
+  formatINR,
+  generateQuotationNumber,
+  QUOTATION_SERVICE_PRESETS,
+  MANUAL_SERVICE_OPTION_VALUE,
+} from './quotation.ts';
+import { SERVICES_DATA } from '../data/companyData.ts';
 import { verifyOwnerCredentials } from './auth.ts';
 
 test('validateIndianPhone correctly validates 10-digit Indian numbers', () => {
@@ -20,6 +33,64 @@ test('validateIndianPhone correctly validates 10-digit Indian numbers', () => {
   assert.equal(validateIndianPhone('9867833456000'), false); // Too long
   assert.equal(validateIndianPhone('abcdefghij'), false); // Non-digit
   assert.equal(validateIndianPhone(''), false); // Empty
+});
+
+test('sanitizeTenDigitMobile restricts mobile number input to 10 digits only', () => {
+  assert.equal(sanitizeTenDigitMobile('98678334569999'), '9867833456');
+  assert.equal(sanitizeTenDigitMobile('98678-33456-123'), '9867833456');
+  assert.equal(sanitizeTenDigitMobile('abc9987324798xyz'), '9987324798');
+  assert.equal(sanitizeTenDigitMobile(''), '');
+});
+
+test('validateQuoteMandatoryFields requires only Your Name, Company/Facility Name, and 10-digit Mobile Number', () => {
+  // Valid with ONLY the 3 mandatory fields
+  const validResult = validateQuoteMandatoryFields({
+    customerName: 'Anand Shinde',
+    companyName: 'Apex Industries',
+    mobileNumber: '9867833456',
+  });
+  assert.equal(validResult.valid, true);
+
+  // Missing customerName fails
+  assert.equal(
+    validateQuoteMandatoryFields({
+      customerName: '   ',
+      companyName: 'Apex Industries',
+      mobileNumber: '9867833456',
+    }).valid,
+    false
+  );
+
+  // Missing companyName fails
+  assert.equal(
+    validateQuoteMandatoryFields({
+      customerName: 'Anand Shinde',
+      companyName: '',
+      mobileNumber: '9867833456',
+    }).valid,
+    false
+  );
+
+  // Invalid or incomplete mobileNumber fails
+  assert.equal(
+    validateQuoteMandatoryFields({
+      customerName: 'Anand Shinde',
+      companyName: 'Apex Industries',
+      mobileNumber: '98678',
+    }).valid,
+    false
+  );
+});
+
+test('QUOTATION_SERVICE_PRESETS includes all listed services and supports manual option', () => {
+  assert.equal(QUOTATION_SERVICE_PRESETS.length, SERVICES_DATA.length);
+  for (const service of SERVICES_DATA) {
+    assert.ok(
+      QUOTATION_SERVICE_PRESETS.some((p) => p.title === service.title),
+      `Service "${service.title}" must be pre-listed in quotation line item presets`
+    );
+  }
+  assert.equal(MANUAL_SERVICE_OPTION_VALUE, '__manual__');
 });
 
 test('cleanPhoneNumber strips punctuation and standard prefixes', () => {
@@ -71,3 +142,11 @@ test('verifyOwnerCredentials validates correct authorized password hash and reje
   assert.equal(isEmpty, false);
 });
 
+test('resolvePublicAsset resolves paths correctly for root, /Blue-Bird-Enterprises-/, and raw fallback', async () => {
+  const { resolvePublicAsset, GH_PAGES_BASE } = await import('./assetPath.ts');
+  assert.equal(GH_PAGES_BASE, '/Blue-Bird-Enterprises-/');
+  assert.equal(
+    resolvePublicAsset('/assets/aistudio/vacuum_tanker_service.jpg'),
+    '/assets/aistudio/vacuum_tanker_service.jpg'
+  );
+});

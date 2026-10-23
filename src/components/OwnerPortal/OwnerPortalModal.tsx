@@ -42,7 +42,14 @@ import {
 } from '../../data/portalStore.ts';
 import { SupabaseService, BookingRecord } from '../../services/supabaseService.ts';
 import { COMPANY_DETAILS, SERVICES_DATA } from '../../data/companyData.ts';
-import { formatINR, QuotationLineItem } from '../../utils/quotation.ts';
+import {
+  formatINR,
+  QuotationLineItem,
+  QUOTATION_SERVICE_PRESETS,
+  MANUAL_SERVICE_OPTION_VALUE,
+  calculateQuotationTotals,
+} from '../../utils/quotation.ts';
+import { sanitizeTenDigitMobile, cleanPhoneNumber } from '../../utils/validation.ts';
 import { PrintableQuotationModal } from './PrintableQuotationModal.tsx';
 import { generateQuotationPDF } from '../../utils/pdfGenerator.ts';
 
@@ -93,10 +100,11 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
   const [newQuoteItems, setNewQuoteItems] = useState<QuotationLineItem[]>([
     {
       id: '1',
-      description: 'Mechanized Vacuum Suction Tanker Machine with operator (6,000L Capacity)',
-      unit: 'Trip',
+      serviceOption: QUOTATION_SERVICE_PRESETS[0].title,
+      description: QUOTATION_SERVICE_PRESETS[0].defaultDescription,
+      unit: QUOTATION_SERVICE_PRESETS[0].defaultUnit,
       quantity: 1,
-      unitRate: 8500
+      unitRate: QUOTATION_SERVICE_PRESETS[0].defaultRate,
     }
   ]);
   const [newQuoteTerms, setNewQuoteTerms] = useState(
@@ -203,7 +211,7 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     const result = await SupabaseService.saveQuotation({
       clientName: newQuoteClient.trim(),
       companyName: newQuoteCompany.trim(),
-      clientPhone: newQuotePhone.trim(),
+      clientPhone: sanitizeTenDigitMobile(newQuotePhone),
       clientEmail: newQuoteEmail.trim(),
       clientGstin: newQuoteGstin.trim(),
       clientAddress: newQuoteAddress.trim(),
@@ -219,18 +227,62 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     setViewingQuote(result.quotation);
   };
 
-  // Add Item to Quotation Form
+  // Add Listed Service Item to Quotation Form
   const handleAddQuoteItem = () => {
+    const nextPreset = QUOTATION_SERVICE_PRESETS[newQuoteItems.length % QUOTATION_SERVICE_PRESETS.length];
     setNewQuoteItems([
       ...newQuoteItems,
       {
         id: String(Date.now()),
-        description: '',
-        unit: 'Trip',
+        serviceOption: nextPreset.title,
+        description: nextPreset.defaultDescription,
+        unit: nextPreset.defaultUnit,
         quantity: 1,
-        unitRate: 5000
+        unitRate: nextPreset.defaultRate,
       }
     ]);
+  };
+
+  // Add Manual Custom Item to Quotation Form
+  const handleAddManualQuoteItem = () => {
+    setNewQuoteItems([
+      ...newQuoteItems,
+      {
+        id: String(Date.now()),
+        serviceOption: MANUAL_SERVICE_OPTION_VALUE,
+        description: '',
+        unit: 'Job',
+        quantity: 1,
+        unitRate: 5000,
+      }
+    ]);
+  };
+
+  // Handle Service Dropdown Change on Line Item
+  const handleServiceOptionChange = (index: number, selectedValue: string) => {
+    const updated = [...newQuoteItems];
+    if (selectedValue === MANUAL_SERVICE_OPTION_VALUE) {
+      const wasPreset = QUOTATION_SERVICE_PRESETS.some(
+        (p) => p.defaultDescription === updated[index].description || p.title === updated[index].description
+      );
+      updated[index] = {
+        ...updated[index],
+        serviceOption: MANUAL_SERVICE_OPTION_VALUE,
+        description: wasPreset ? '' : updated[index].description,
+      };
+    } else {
+      const preset = QUOTATION_SERVICE_PRESETS.find((p) => p.title === selectedValue);
+      if (preset) {
+        updated[index] = {
+          ...updated[index],
+          serviceOption: preset.title,
+          description: preset.defaultDescription,
+          unit: preset.defaultUnit,
+          unitRate: preset.defaultRate,
+        };
+      }
+    }
+    setNewQuoteItems(updated);
   };
 
   const handleUpdateQuoteItem = (index: number, field: keyof QuotationLineItem, value: any) => {
@@ -248,16 +300,18 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
   const handleQuoteFromInquiry = (inquiry: CustomerInquiry) => {
     setNewQuoteClient(inquiry.customerName);
     setNewQuoteCompany(inquiry.companyName);
-    setNewQuotePhone(inquiry.mobileNumber);
+    setNewQuotePhone(sanitizeTenDigitMobile(cleanPhoneNumber(inquiry.mobileNumber)));
     setNewQuoteEmail(inquiry.email);
     setNewQuoteAddress(inquiry.siteLocation);
+    const matchedPreset = QUOTATION_SERVICE_PRESETS.find((p) => p.title === inquiry.serviceRequired);
     setNewQuoteItems([
       {
         id: '1',
+        serviceOption: matchedPreset ? matchedPreset.title : MANUAL_SERVICE_OPTION_VALUE,
         description: `${inquiry.serviceRequired}: ${inquiry.workDescription}`,
-        unit: 'Lump Sum',
+        unit: matchedPreset ? matchedPreset.defaultUnit : 'Lump Sum',
         quantity: 1,
-        unitRate: 15000
+        unitRate: matchedPreset ? matchedPreset.defaultRate : 15000
       }
     ]);
     setActiveTab('quotations');
@@ -1149,14 +1203,20 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                           />
                         </div>
                         <div>
-                          <label className="font-bold text-slate-700 block mb-1">Client Mobile</label>
-                          <input
-                            type="text"
-                            value={newQuotePhone}
-                            onChange={(e) => setNewQuotePhone(e.target.value)}
-                            placeholder="98678 33456"
-                            className="w-full p-2 border rounded-lg bg-slate-50"
-                          />
+                          <label className="font-bold text-slate-700 block mb-1">Client Mobile (10 Digits)</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2 text-xs font-semibold text-slate-500">+91</span>
+                            <input
+                              type="tel"
+                              inputMode="numeric"
+                              maxLength={10}
+                              pattern="[0-9]{10}"
+                              value={newQuotePhone}
+                              onChange={(e) => setNewQuotePhone(sanitizeTenDigitMobile(e.target.value))}
+                              placeholder="9867833456"
+                              className="w-full pl-10 pr-2 py-2 border rounded-lg bg-slate-50 font-mono"
+                            />
+                          </div>
                         </div>
                         <div>
                           <label className="font-bold text-slate-700 block mb-1">Client Email</label>
@@ -1192,66 +1252,159 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
 
                       {/* Line Items */}
                       <div className="pt-2">
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="font-bold text-slate-800">Quotation Line Items</label>
-                          <button
-                            type="button"
-                            onClick={handleAddQuoteItem}
-                            className="px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 flex items-center gap-1"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Add Item</span>
-                          </button>
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                          <div>
+                            <label className="font-bold text-slate-800 block">
+                              Quotation Line Items
+                            </label>
+                            <span className="text-[11px] text-slate-500">
+                              Select any listed company service from the dropdown or choose Manual / Custom Entry
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleAddQuoteItem}
+                              className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-bold hover:bg-blue-100 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add Service Item</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddManualQuoteItem}
+                              className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold hover:bg-amber-100 flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Add Manual Item</span>
+                            </button>
+                          </div>
                         </div>
 
-                        <div className="space-y-2">
-                          {newQuoteItems.map((item, idx) => (
-                            <div key={item.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row gap-2 items-center">
-                              <input
-                                type="text"
-                                required
-                                placeholder="Service description..."
-                                value={item.description}
-                                onChange={(e) => handleUpdateQuoteItem(idx, 'description', e.target.value)}
-                                className="flex-1 p-1.5 border rounded-md bg-white text-xs w-full"
-                              />
-                              <div className="flex items-center gap-2 w-full sm:w-auto">
-                                <input
-                                  type="text"
-                                  placeholder="Unit (Trip, Day, Job)"
-                                  value={item.unit}
-                                  onChange={(e) => handleUpdateQuoteItem(idx, 'unit', e.target.value)}
-                                  className="w-20 p-1.5 border rounded-md bg-white text-xs"
-                                />
-                                <input
-                                  type="number"
-                                  min="1"
-                                  placeholder="Qty"
-                                  value={item.quantity}
-                                  onChange={(e) => handleUpdateQuoteItem(idx, 'quantity', Number(e.target.value))}
-                                  className="w-16 p-1.5 border rounded-md bg-white text-xs"
-                                />
-                                <input
-                                  type="number"
-                                  min="0"
-                                  placeholder="Rate (₹)"
-                                  value={item.unitRate}
-                                  onChange={(e) => handleUpdateQuoteItem(idx, 'unitRate', Number(e.target.value))}
-                                  className="w-24 p-1.5 border rounded-md bg-white text-xs"
-                                />
-                                {newQuoteItems.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveQuoteItem(idx)}
-                                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
+                        <div className="space-y-3">
+                          {newQuoteItems.map((item, idx) => {
+                            const matchedPreset = QUOTATION_SERVICE_PRESETS.find(
+                              (p) => p.title === item.serviceOption || p.defaultDescription === item.description
+                            );
+                            const currentSelectValue =
+                              item.serviceOption === MANUAL_SERVICE_OPTION_VALUE
+                                ? MANUAL_SERVICE_OPTION_VALUE
+                                : matchedPreset
+                                ? matchedPreset.title
+                                : MANUAL_SERVICE_OPTION_VALUE;
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5"
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+                                  <div className="flex items-center gap-2 flex-1">
+                                    <span className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                                      {idx + 1}
+                                    </span>
+                                    <select
+                                      aria-label={`Select service for line item ${idx + 1}`}
+                                      value={currentSelectValue}
+                                      onChange={(e) => handleServiceOptionChange(idx, e.target.value)}
+                                      className="flex-1 p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-900 focus:border-blue-600"
+                                    >
+                                      <option value={MANUAL_SERVICE_OPTION_VALUE}>
+                                        Manual / Custom Item (Type Custom Service Below)
+                                      </option>
+                                      {QUOTATION_SERVICE_PRESETS.map((preset) => (
+                                        <option key={preset.id} value={preset.title}>
+                                          {preset.categoryTitle}: {preset.title}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {newQuoteItems.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveQuoteItem(idx)}
+                                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg self-end sm:self-auto flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
+                                      title="Remove line item"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span className="sm:hidden">Remove</span>
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-col sm:flex-row gap-2 items-center">
+                                  <input
+                                    type="text"
+                                    required
+                                    placeholder={
+                                      currentSelectValue === MANUAL_SERVICE_OPTION_VALUE
+                                        ? 'Enter manual / custom service description...'
+                                        : 'Service description & scope details...'
+                                    }
+                                    value={item.description}
+                                    onChange={(e) => handleUpdateQuoteItem(idx, 'description', e.target.value)}
+                                    className="flex-1 p-2 border border-slate-300 rounded-lg bg-white text-xs w-full"
+                                  />
+                                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                                    <div className="w-24">
+                                      <span className="text-[10px] text-slate-500 block mb-0.5">Unit</span>
+                                      <input
+                                        type="text"
+                                        placeholder="Trip / Job"
+                                        value={item.unit}
+                                        onChange={(e) => handleUpdateQuoteItem(idx, 'unit', e.target.value)}
+                                        className="w-full p-1.5 border border-slate-300 rounded-lg bg-white text-xs"
+                                      />
+                                    </div>
+                                    <div className="w-16">
+                                      <span className="text-[10px] text-slate-500 block mb-0.5">Qty</span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        placeholder="Qty"
+                                        value={item.quantity}
+                                        onChange={(e) => handleUpdateQuoteItem(idx, 'quantity', Number(e.target.value))}
+                                        className="w-full p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-mono"
+                                      />
+                                    </div>
+                                    <div className="w-28">
+                                      <span className="text-[10px] text-slate-500 block mb-0.5">Rate (₹)</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="Rate (₹)"
+                                        value={item.unitRate}
+                                        onChange={(e) => handleUpdateQuoteItem(idx, 'unitRate', Number(e.target.value))}
+                                        className="w-full p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-mono"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Live Totals Summary Bar */}
+                        {(() => {
+                          const liveTotals = calculateQuotationTotals(newQuoteItems);
+                          return (
+                            <div className="mt-3 p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                              <div className="text-slate-600">
+                                <span>Subtotal: </span>
+                                <strong className="font-mono text-slate-900">{formatINR(liveTotals.subtotal)}</strong>
+                                <span className="mx-2 text-slate-300">|</span>
+                                <span>GST (18%): </span>
+                                <strong className="font-mono text-slate-900">{formatINR(liveTotals.totalGst)}</strong>
+                              </div>
+                              <div className="text-blue-900 font-bold">
+                                <span>Grand Total: </span>
+                                <span className="font-mono text-sm">{formatINR(liveTotals.grandTotal)}</span>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Terms */}
@@ -1269,13 +1422,13 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsCreatingQuote(false)}
-                          className="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-bold hover:bg-slate-300"
+                          className="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-md flex items-center gap-1.5"
+                          className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-md flex items-center gap-1.5 cursor-pointer"
                         >
                           <Save className="w-4 h-4" />
                           <span>Save & Generate PDF</span>
@@ -1377,31 +1530,40 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                 <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">Primary Telephone Line</label>
+                      <label className="font-bold text-slate-700 block mb-1">Primary Telephone Line (10 Digits)</label>
                       <input
-                        type="text"
-                        value={settings.primaryPhone}
-                        onChange={(e) => setSettings({ ...settings, primaryPhone: e.target.value })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs"
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        pattern="[0-9]{10}"
+                        value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.primaryPhone))}
+                        onChange={(e) => setSettings({ ...settings, primaryPhone: sanitizeTenDigitMobile(e.target.value) })}
+                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs font-mono"
                       />
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">Secondary Telephone Line</label>
+                      <label className="font-bold text-slate-700 block mb-1">Secondary Telephone Line (10 Digits)</label>
                       <input
-                        type="text"
-                        value={settings.secondaryPhone}
-                        onChange={(e) => setSettings({ ...settings, secondaryPhone: e.target.value })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs"
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        pattern="[0-9]{10}"
+                        value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.secondaryPhone))}
+                        onChange={(e) => setSettings({ ...settings, secondaryPhone: sanitizeTenDigitMobile(e.target.value) })}
+                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs font-mono"
                       />
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-700 block mb-1">WhatsApp Dispatch Number</label>
+                      <label className="font-bold text-slate-700 block mb-1">WhatsApp Dispatch Number (10 Digits)</label>
                       <input
-                        type="text"
-                        value={settings.whatsappNumber}
-                        onChange={(e) => setSettings({ ...settings, whatsappNumber: e.target.value })}
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={10}
+                        pattern="[0-9]{10}"
+                        value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.whatsappNumber))}
+                        onChange={(e) => setSettings({ ...settings, whatsappNumber: sanitizeTenDigitMobile(e.target.value) })}
                         className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs font-mono"
                       />
                     </div>

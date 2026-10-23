@@ -76,15 +76,34 @@ export const COMPANY_DETAILS = {
 };
 
 // Attached authentic business photographs provided by the client
+const resolveAsset = (assetPath: string): string => {
+  const cleanPath = assetPath.replace(/^(\.\/|\/)+/, '');
+  if (typeof window !== 'undefined') {
+    if ((window as any).__RAW_GH_PAGES__) {
+      return `./public/${cleanPath}`;
+    }
+    const hostname = window.location?.hostname || '';
+    const pathname = window.location?.pathname || '/';
+    if (
+      hostname.endsWith('.github.io') ||
+      pathname.includes('/Blue-Bird-Enterprises-') ||
+      (pathname !== '/' && !pathname.startsWith('/index.html'))
+    ) {
+      return `./${cleanPath}`;
+    }
+  }
+  return `/${cleanPath}`;
+};
+
 export const ATTACHED_IMAGES = {
-  heroSuctionTruck: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg',
-  workerEtpCleaning: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.42_PM__1__e0c1e7a3.jpeg',
-  manholeDechoking: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.42_PM__2__36252f4c.jpeg',
-  suctionTankerProfile: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.42_PM_5f6a3ffe.jpeg',
-  drainJettingWorker: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM__2__79587862.jpeg',
-  stormwaterDrainRig: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM__1__adeef42a.jpeg',
-  domesticTankWork: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM_180d0be7.jpeg',
-  courtyardVacuumOperation: '/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM__3__acbfd4d1.jpeg',
+  heroSuctionTruck: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.44_PM_bf3122ef.jpeg'),
+  workerEtpCleaning: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.42_PM__1__e0c1e7a3.jpeg'),
+  manholeDechoking: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.42_PM__2__36252f4c.jpeg'),
+  suctionTankerProfile: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.42_PM_5f6a3ffe.jpeg'),
+  drainJettingWorker: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM__2__79587862.jpeg'),
+  stormwaterDrainRig: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM__1__adeef42a.jpeg'),
+  domesticTankWork: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM_180d0be7.jpeg'),
+  courtyardVacuumOperation: resolveAsset('/assets/aistudio/WhatsApp_Image_2026-10-23_at_2.37.43_PM__3__acbfd4d1.jpeg'),
 };
 
 export const GALLERY_ITEMS: GalleryItem[] = [

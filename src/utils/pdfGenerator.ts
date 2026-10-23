@@ -368,13 +368,40 @@ export const OFFICIAL_COMPANY_PROFILE_FILENAME = 'Blue_Bird_Enterprises_Company_
  */
 export async function generateCompanyProfilePDF(): Promise<void> {
   const filename = OFFICIAL_COMPANY_PROFILE_FILENAME;
-  const pdfUrl = OFFICIAL_COMPANY_PROFILE_PDF_URL;
+  const cleanPath = OFFICIAL_COMPANY_PROFILE_PDF_URL.replace(/^(\.\/|\/)+/, '');
+  const isRawGhPages = typeof window !== 'undefined' && Boolean((window as any).__RAW_GH_PAGES__);
+  const isSubpath =
+    typeof window !== 'undefined' &&
+    (window.location?.hostname?.endsWith('.github.io') ||
+      window.location?.pathname?.includes('/Blue-Bird-Enterprises-'));
+
+  const candidateUrls = isRawGhPages
+    ? [`./public/${cleanPath}`, `./${cleanPath}`, OFFICIAL_COMPANY_PROFILE_PDF_URL]
+    : isSubpath
+    ? [`./${cleanPath}`, `./public/${cleanPath}`, OFFICIAL_COMPANY_PROFILE_PDF_URL]
+    : [OFFICIAL_COMPANY_PROFILE_PDF_URL, `./${cleanPath}`, `./public/${cleanPath}`];
+
+  let resolvedUrl = candidateUrls[0];
 
   try {
-    const response = await fetch(pdfUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to load corporate profile PDF: ${response.status} ${response.statusText}`);
+    let response: Response | null = null;
+    for (const url of candidateUrls) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          response = res;
+          resolvedUrl = url;
+          break;
+        }
+      } catch {
+        // try next candidate URL
+      }
     }
+
+    if (!response || !response.ok) {
+      throw new Error('Failed to load corporate profile PDF from candidate paths');
+    }
+
     const blob = await response.blob();
     const objectUrl = window.URL.createObjectURL(blob);
     
@@ -393,7 +420,7 @@ export async function generateCompanyProfilePDF(): Promise<void> {
     console.warn('Blob fetch failed, falling back to direct anchor link download:', error);
     // Direct link fallback
     const fallbackLink = document.createElement('a');
-    fallbackLink.href = pdfUrl;
+    fallbackLink.href = resolvedUrl;
     fallbackLink.download = filename;
     fallbackLink.target = '_blank';
     fallbackLink.rel = 'noopener noreferrer';

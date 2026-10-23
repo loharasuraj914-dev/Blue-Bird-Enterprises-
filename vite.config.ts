@@ -5,10 +5,27 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    base: '/Blue-Bird-Enterprises-/',
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'dev-root-redirect',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            if (req.url === '/' || req.url === '/index.html') {
+              res.writeHead(302, { Location: '/Blue-Bird-Enterprises-/' });
+              res.end();
+              return;
+            }
+            next();
+          });
+        },
+      },
+    ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

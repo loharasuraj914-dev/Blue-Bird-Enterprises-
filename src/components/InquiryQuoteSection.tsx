@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { Send, Phone, MessageSquare, CheckCircle, AlertCircle, Calendar, Clock, FileUp, Shield, ClipboardCheck, Sparkles } from 'lucide-react';
-import { validateIndianPhone, validateEmail } from '../utils/validation.ts';
+import {
+  validateIndianPhone,
+  sanitizeTenDigitMobile,
+  validateQuoteMandatoryFields,
+} from '../utils/validation.ts';
 import { SupabaseService } from '../services/supabaseService.ts';
 import { COMPANY_DETAILS, SERVICES_DATA } from '../data/companyData.ts';
 
@@ -24,7 +28,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
   const [siteLocation, setSiteLocation] = useState('');
   const [workDescription, setWorkDescription] = useState('');
   const [preferredCallbackTime, setPreferredCallbackTime] = useState('Morning (9 AM - 1 PM)');
-  const [consentChecked, setConsentChecked] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(true);
   const [fileName, setFileName] = useState('');
 
   // 2. Callback Form State
@@ -54,52 +58,39 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
   const [successType, setSuccessType] = useState<'quotation' | 'callback' | 'booking'>('quotation');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Submit Customer Enquiry -> customer_enquiries
+  // Submit Customer Enquiry -> customer_enquiries (Only Name, Company/Facility Name, and 10-Digit Mobile mandatory)
   const handleQuoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (!customerName.trim()) {
-      setErrorMsg('Please enter your contact name.');
-      return;
-    }
-    if (!companyName.trim()) {
-      setErrorMsg('Please enter your company / facility name.');
-      return;
-    }
-    if (!validateIndianPhone(mobileNumber)) {
-      setErrorMsg('Please provide a valid 10-digit Indian mobile number (e.g. 98678 33456).');
-      return;
-    }
-    if (email && !validateEmail(email)) {
-      setErrorMsg('Please enter a valid email address.');
-      return;
-    }
-    if (!siteLocation.trim()) {
-      setErrorMsg('Please enter your site location or MIDC industrial area.');
-      return;
-    }
-    if (!workDescription.trim()) {
-      setErrorMsg('Please provide a brief description of the required work or tank/pit capacity.');
-      return;
-    }
-    if (!consentChecked) {
-      setErrorMsg('Please check the consent box to allow our operations desk to contact you.');
+    const validation = validateQuoteMandatoryFields({
+      customerName,
+      companyName,
+      mobileNumber,
+      email,
+    });
+
+    if (!validation.valid) {
+      setErrorMsg(validation.error || 'Please check the required fields.');
       return;
     }
 
     setIsSubmitting(true);
 
     try {
+      const descriptionWithFile =
+        (workDescription.trim() || 'Quotation requested') +
+        (fileName ? ` [Spec doc: ${fileName}]` : '');
+
       const res = await SupabaseService.submitCustomerEnquiry({
         customerName: customerName.trim(),
         companyName: companyName.trim(),
-        phone: mobileNumber.trim(),
+        phone: sanitizeTenDigitMobile(mobileNumber),
         email: email.trim(),
-        requestedService: serviceRequired,
-        siteLocation: siteLocation.trim(),
+        requestedService: serviceRequired || SERVICES_DATA[0].title,
+        siteLocation: siteLocation.trim() || 'Not specified',
         preferredCallback: preferredCallbackTime,
-        workDescription: workDescription.trim() + (fileName ? ` [Spec doc: ${fileName}]` : ''),
+        workDescription: descriptionWithFile,
       });
 
       setIsSubmitting(false);
@@ -380,7 +371,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                       <div>
                         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Contact Person Name *
+                          Your Name <span className="text-rose-600">*</span>
                         </label>
                         <input
                           type="text"
@@ -394,7 +385,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
 
                       <div>
                         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Company / Facility Name *
+                          Company / Facility Name <span className="text-rose-600">*</span>
                         </label>
                         <input
                           type="text"
@@ -408,7 +399,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
 
                       <div>
                         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Mobile Number * (Indian 10-Digit)
+                          Mobile Number <span className="text-rose-600">*</span> <span className="text-slate-400 font-normal">(10 Digits)</span>
                         </label>
                         <div className="relative">
                           <span className="absolute left-3.5 top-2.5 text-sm font-semibold text-slate-500">
@@ -416,18 +407,21 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                           </span>
                           <input
                             type="tel"
+                            inputMode="numeric"
+                            maxLength={10}
+                            pattern="[0-9]{10}"
                             required
                             value={mobileNumber}
-                            onChange={(e) => setMobileNumber(e.target.value)}
-                            placeholder="98678 33456"
-                            className="w-full pl-12 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-sm text-slate-900 bg-slate-50/50"
+                            onChange={(e) => setMobileNumber(sanitizeTenDigitMobile(e.target.value))}
+                            placeholder="9867833456"
+                            className="w-full pl-12 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-sm text-slate-900 bg-slate-50/50 font-mono"
                           />
                         </div>
                       </div>
 
                       <div>
                         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Official Email Address (Optional)
+                          Official Email Address <span className="text-slate-400 font-normal">(Optional)</span>
                         </label>
                         <input
                           type="email"
@@ -440,7 +434,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
 
                       <div>
                         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Service Required *
+                          Service Required <span className="text-slate-400 font-normal">(Optional)</span>
                         </label>
                         <select
                           value={serviceRequired}
@@ -458,14 +452,13 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
 
                       <div>
                         <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Site Location & MIDC Area *
+                          Site Location & MIDC Area <span className="text-slate-400 font-normal">(Optional)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           value={siteLocation}
                           onChange={(e) => setSiteLocation(e.target.value)}
-                          placeholder="e.g. Plot C-14, Pawane MIDC, Turbhe"
+                          placeholder="e.g. Plot C-14, Pawane MIDC, Turbhe (Optional)"
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-sm text-slate-900 bg-slate-50/50"
                         />
                       </div>
@@ -473,7 +466,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
 
                     <div>
                       <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                        Preferred Callback Window
+                        Preferred Callback Window <span className="text-slate-400 font-normal">(Optional)</span>
                       </label>
                       <select
                         value={preferredCallbackTime}
@@ -489,14 +482,13 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
 
                     <div>
                       <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                        Work Description & Site Dimensions *
+                        Work Description & Site Dimensions <span className="text-slate-400 font-normal">(Optional)</span>
                       </label>
                       <textarea
-                        required
                         rows={3}
                         value={workDescription}
                         onChange={(e) => setWorkDescription(e.target.value)}
-                        placeholder="Briefly describe sludge volume, pit depth, pipeline diameter, tanker access, or nature of choke/debris..."
+                        placeholder="Briefly describe sludge volume, pit depth, pipeline diameter, tanker access, or nature of choke/debris... (Optional)"
                         className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-sm text-slate-900 bg-slate-50/50"
                       ></textarea>
                     </div>
@@ -601,11 +593,14 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                           </span>
                           <input
                             type="tel"
+                            inputMode="numeric"
+                            maxLength={10}
+                            pattern="[0-9]{10}"
                             required
                             value={cbPhone}
-                            onChange={(e) => setCbPhone(e.target.value)}
-                            placeholder="99873 24798"
-                            className="w-full pl-12 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 text-sm bg-slate-50/50"
+                            onChange={(e) => setCbPhone(sanitizeTenDigitMobile(e.target.value))}
+                            placeholder="9987324798"
+                            className="w-full pl-12 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 text-sm bg-slate-50/50 font-mono"
                           />
                         </div>
                       </div>
@@ -729,11 +724,14 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                           </span>
                           <input
                             type="tel"
+                            inputMode="numeric"
+                            maxLength={10}
+                            pattern="[0-9]{10}"
                             required
                             value={bkPhone}
-                            onChange={(e) => setBkPhone(e.target.value)}
-                            placeholder="98678 33456"
-                            className="w-full pl-12 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 text-sm bg-slate-50/50"
+                            onChange={(e) => setBkPhone(sanitizeTenDigitMobile(e.target.value))}
+                            placeholder="9867833456"
+                            className="w-full pl-12 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 text-sm bg-slate-50/50 font-mono"
                           />
                         </div>
                       </div>

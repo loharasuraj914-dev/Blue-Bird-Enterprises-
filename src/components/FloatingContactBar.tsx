@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Phone, MessageSquare, PhoneCall, X, CheckCircle, AlertCircle, Clock, Send } from 'lucide-react';
 import { COMPANY_DETAILS } from '../data/companyData.ts';
-import { validateIndianPhone } from '../utils/validation.ts';
+import { validateIndianPhone, sanitizeTenDigitMobile } from '../utils/validation.ts';
 import { PortalStorage } from '../data/portalStore.ts';
 import { SupabaseService } from '../services/supabaseService.ts';
 
@@ -392,11 +392,14 @@ export const FloatingContactBar: React.FC = () => {
                     <span className="absolute left-2.5 top-2 text-xs font-semibold text-slate-500">+91</span>
                     <input
                       type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
                       required
                       value={cbPhone}
-                      onChange={(e) => setCbPhone(e.target.value)}
-                      placeholder="98678 33456"
-                      className="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50 focus:border-blue-600"
+                      onChange={(e) => setCbPhone(sanitizeTenDigitMobile(e.target.value))}
+                      placeholder="9867833456"
+                      className="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50 focus:border-blue-600 font-mono"
                     />
                   </div>
                 </div>

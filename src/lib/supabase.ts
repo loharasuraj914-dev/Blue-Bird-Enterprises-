@@ -1,38 +1,77 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const getEnvVar = (key: string, fallback: string): string => {
+const DEFAULT_SUPABASE_URL = 'https://xpyxilnmdrsopzpftmms.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_5SJT_F-cRlXSI2TBUS8U5w_z6Zib1aF';
+
+const getRawEnvVar = (key: string): string | undefined => {
   try {
     if (typeof import.meta !== 'undefined' && (import.meta as any)?.env?.[key]) {
-      return (import.meta as any).env[key];
+      return String((import.meta as any).env[key]).trim();
     }
   } catch {
     // ignore
   }
   try {
     if (typeof process !== 'undefined' && process?.env?.[key]) {
-      return process.env[key];
+      return String(process.env[key]).trim();
     }
   } catch {
     // ignore
   }
-  return fallback;
+  return undefined;
 };
 
+const isValidHttpUrl = (value?: string): value is string => {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!/^https?:\/\//i.test(trimmed)) return false;
+  if (trimmed.includes('YOUR_') || trimmed.includes('<') || trimmed.includes('placeholder')) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && Boolean(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
+
+const isValidSupabaseKey = (value?: string): value is string => {
+  if (!value || typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length < 15) return false;
+  if (trimmed.includes('YOUR_') || trimmed.includes('<') || trimmed.includes('placeholder')) return false;
+  return true;
+};
+
+const rawUrl = getRawEnvVar('VITE_SUPABASE_URL');
+const rawKey = getRawEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY');
+
 // Supabase Project Credentials provided by user
-export const SUPABASE_URL = getEnvVar('VITE_SUPABASE_URL', 'https://xpyxilnmdrsopzpftmms.supabase.co');
+export const SUPABASE_URL = isValidHttpUrl(rawUrl) ? rawUrl : DEFAULT_SUPABASE_URL;
 
-export const SUPABASE_PUBLISHABLE_KEY = getEnvVar(
-  'VITE_SUPABASE_PUBLISHABLE_KEY',
-  'sb_publishable_5SJT_F-cRlXSI2TBUS8U5w_z6Zib1aF'
-);
+export const SUPABASE_PUBLISHABLE_KEY = isValidSupabaseKey(rawKey)
+  ? rawKey
+  : DEFAULT_SUPABASE_KEY;
 
-// Public Supabase client instance
-export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  },
-});
+// Public Supabase client instance with safe fallback guarantee
+const initSupabaseClient = (): SupabaseClient => {
+  try {
+    return createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    });
+  } catch {
+    return createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    });
+  }
+};
+
+export const supabase: SupabaseClient = initSupabaseClient();
 
 export interface SupabaseHealthReport {
   isConfigured: boolean;

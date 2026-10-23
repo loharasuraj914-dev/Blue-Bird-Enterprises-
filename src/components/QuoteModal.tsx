@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { X, Send, CheckCircle, AlertCircle, MessageSquare } from 'lucide-react';
-import { validateIndianPhone, validateEmail } from '../utils/validation.ts';
-import { PortalStorage } from '../data/portalStore.ts';
+import {
+  sanitizeTenDigitMobile,
+  validateQuoteMandatoryFields,
+} from '../utils/validation.ts';
 import { SupabaseService } from '../services/supabaseService.ts';
 import { COMPANY_DETAILS, SERVICES_DATA } from '../data/companyData.ts';
 
@@ -24,7 +26,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
   const [siteLocation, setSiteLocation] = useState('');
   const [workDescription, setWorkDescription] = useState('');
   const [preferredCallbackTime, setPreferredCallbackTime] = useState('Morning (9 AM - 1 PM)');
-  const [consentChecked, setConsentChecked] = useState(false);
+  const [consentChecked, setConsentChecked] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [successRef, setSuccessRef] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,32 +43,15 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
 
-    if (!customerName.trim()) {
-      setErrorMsg('Please enter your contact name.');
-      return;
-    }
-    if (!companyName.trim()) {
-      setErrorMsg('Please enter your company / plant name.');
-      return;
-    }
-    if (!validateIndianPhone(mobileNumber)) {
-      setErrorMsg('Please enter a valid 10-digit Indian mobile number (e.g. 98678 33456).');
-      return;
-    }
-    if (email && !validateEmail(email)) {
-      setErrorMsg('Please enter a valid email address.');
-      return;
-    }
-    if (!siteLocation.trim()) {
-      setErrorMsg('Please enter your site location or MIDC area.');
-      return;
-    }
-    if (!workDescription.trim()) {
-      setErrorMsg('Please enter brief work details or pit/tank capacity.');
-      return;
-    }
-    if (!consentChecked) {
-      setErrorMsg('Please confirm your consent to be contacted.');
+    const validation = validateQuoteMandatoryFields({
+      customerName,
+      companyName,
+      mobileNumber,
+      email,
+    });
+
+    if (!validation.valid) {
+      setErrorMsg(validation.error || 'Please check the required fields.');
       return;
     }
 
@@ -76,12 +61,12 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
       const res = await SupabaseService.submitCustomerEnquiry({
         customerName: customerName.trim(),
         companyName: companyName.trim(),
-        phone: mobileNumber.trim(),
+        phone: sanitizeTenDigitMobile(mobileNumber),
         email: email.trim(),
-        requestedService: serviceRequired,
-        siteLocation: siteLocation.trim(),
+        requestedService: serviceRequired || SERVICES_DATA[0].title,
+        siteLocation: siteLocation.trim() || 'Not specified',
         preferredCallback: preferredCallbackTime,
-        workDescription: workDescription.trim(),
+        workDescription: workDescription.trim() || 'Quotation requested',
       });
 
       setIsSubmitting(false);
@@ -115,7 +100,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
               {COMPANY_DETAILS.name}
             </div>
             <h3 className="font-heading text-lg font-bold">
-              Request a Free Quotation & Scope
+              Get Free Quote
             </h3>
           </div>
           <button
@@ -149,7 +134,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
               <div className="flex flex-col gap-2">
                 <a
                   href={`https://wa.me/${COMPANY_DETAILS.whatsappNumber}?text=${encodeURIComponent(
-                    `Hello Blue Bird Enterprises, I requested a quote for ${serviceRequired}. Ref: ${successRef}`
+                    `Hello Blue Bird Enterprises, I requested a quote for ${serviceRequired || 'Industrial Services'}. Ref: ${successRef}`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -179,7 +164,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Your Name *
+                    Your Name <span className="text-rose-600">*</span>
                   </label>
                   <input
                     type="text"
@@ -193,7 +178,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Company / Facility Name *
+                    Company / Facility Name <span className="text-rose-600">*</span>
                   </label>
                   <input
                     type="text"
@@ -207,24 +192,27 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Mobile Number (10 Digits) *
+                    Mobile Number <span className="text-rose-600">*</span> <span className="text-[10px] font-normal text-slate-500">(10 Digits)</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-2.5 top-2 text-xs font-semibold text-slate-500">+91</span>
                     <input
                       type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
                       required
                       value={mobileNumber}
-                      onChange={(e) => setMobileNumber(e.target.value)}
-                      placeholder="98678 33456"
-                      className="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50"
+                      onChange={(e) => setMobileNumber(sanitizeTenDigitMobile(e.target.value))}
+                      placeholder="9867833456"
+                      className="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50 font-mono"
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Email Address
+                    Email Address <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
                   </label>
                   <input
                     type="email"
@@ -238,7 +226,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Service Required *
+                  Service Required <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
                 </label>
                 <select
                   value={serviceRequired}
@@ -256,28 +244,26 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Site Location (MIDC / Town in Maharashtra) *
+                  Site Location (MIDC / Town in Maharashtra) <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
                 </label>
                 <input
                   type="text"
-                  required
                   value={siteLocation}
                   onChange={(e) => setSiteLocation(e.target.value)}
-                  placeholder="e.g. Turbhe MIDC / Taloja / Rabale"
+                  placeholder="e.g. Turbhe MIDC / Taloja / Rabale (Optional)"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Brief Work Details & Scope *
+                  Brief Work Details & Scope <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
                 </label>
                 <textarea
-                  required
                   rows={2}
                   value={workDescription}
                   onChange={(e) => setWorkDescription(e.target.value)}
-                  placeholder="Sludge volume, chamber depth, choke symptoms..."
+                  placeholder="Sludge volume, chamber depth, choke symptoms... (Optional)"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50"
                 ></textarea>
               </div>
@@ -291,7 +277,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                   className="mt-0.5 h-3.5 w-3.5 rounded-sm border-slate-300 text-blue-600"
                 />
                 <label htmlFor="modal-consent" className="text-[11px] text-slate-600 leading-normal">
-                  I consent to Blue Bird Enterprises contacting me regarding this service inquiry.
+                  I consent to Blue Bird Enterprises contacting me regarding this service inquiry. <span className="text-slate-400">(Optional)</span>
                 </label>
               </div>
 

@@ -56,14 +56,18 @@ export class SupabaseService {
     companyName?: string;
     phone: string;
     email?: string;
-    requestedService: string;
-    siteLocation: string;
+    requestedService?: string;
+    siteLocation?: string;
     preferredCallback?: string;
-    workDescription: string;
+    workDescription?: string;
   }): Promise<{ success: boolean; referenceNo: string; savedToSupabase: boolean; error?: string }> {
     const referenceNo = generateInquiryRef();
     let savedToSupabase = false;
     let remoteId: string | undefined;
+
+    const serviceVal = (payload.requestedService || 'General Industrial Service').trim() || 'General Industrial Service';
+    const siteVal = (payload.siteLocation || '').trim() || 'Not specified';
+    const descVal = (payload.workDescription || '').trim() || 'Quotation requested';
 
     const rowPayload = {
       reference_no: referenceNo,
@@ -71,31 +75,21 @@ export class SupabaseService {
       company_name: (payload.companyName || 'Industrial Client').trim(),
       phone: payload.phone.trim(),
       email: (payload.email || '').trim() || null,
-      requested_service: payload.requestedService,
-      site_location: payload.siteLocation.trim(),
+      requested_service: serviceVal,
+      site_location: siteVal,
       preferred_callback: payload.preferredCallback || null,
-      description: payload.workDescription.trim(),
+      description: descVal,
       status: 'new',
       internal_notes: '',
     };
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('customer_enquiries')
-        .insert([rowPayload])
-        .select()
-        .single();
+        .insert([rowPayload]);
 
-      if (!error && data) {
+      if (!error) {
         savedToSupabase = true;
-        remoteId = data.id;
-      } else if (error) {
-        const { error: insertOnlyErr } = await supabase
-          .from('customer_enquiries')
-          .insert([rowPayload]);
-        if (!insertOnlyErr) {
-          savedToSupabase = true;
-        }
       }
     } catch {
       savedToSupabase = false;
@@ -109,10 +103,10 @@ export class SupabaseService {
       companyName: (payload.companyName || 'Industrial Client').trim(),
       mobileNumber: payload.phone.trim(),
       email: (payload.email || '').trim() || 'Not specified',
-      serviceRequired: payload.requestedService,
-      siteLocation: payload.siteLocation.trim(),
+      serviceRequired: serviceVal,
+      siteLocation: siteVal,
       preferredCallback: payload.preferredCallback,
-      workDescription: payload.workDescription.trim(),
+      workDescription: descVal,
     });
 
     return {
@@ -220,22 +214,12 @@ export class SupabaseService {
     };
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('callback_requests')
-        .insert([rowPayload])
-        .select()
-        .single();
+        .insert([rowPayload]);
 
-      if (!error && data) {
+      if (!error) {
         savedToSupabase = true;
-        remoteId = data.id;
-      } else if (error) {
-        const { error: insertOnlyErr } = await supabase
-          .from('callback_requests')
-          .insert([rowPayload]);
-        if (!insertOnlyErr) {
-          savedToSupabase = true;
-        }
       }
     } catch {
       savedToSupabase = false;
@@ -379,20 +363,12 @@ export class SupabaseService {
     };
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('bookings')
-        .insert([rowPayload])
-        .select()
-        .single();
+        .insert([rowPayload]);
 
-      if (!error && data) {
+      if (!error) {
         savedToSupabase = true;
-        remoteId = data.id;
-      } else if (error) {
-        const { error: insertOnlyErr } = await supabase.from('bookings').insert([rowPayload]);
-        if (!insertOnlyErr) {
-          savedToSupabase = true;
-        }
       }
     } catch {
       savedToSupabase = false;

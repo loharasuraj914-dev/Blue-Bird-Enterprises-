@@ -3,8 +3,49 @@
  * Standard industrial quotation calculations with GST (CGST 9% + SGST 9% or IGST 18%).
  */
 
+import { SERVICES_DATA } from '../data/companyData.ts';
+
+export const MANUAL_SERVICE_OPTION_VALUE = '__manual__';
+
+export interface QuotationServicePreset {
+  id: string;
+  title: string;
+  categoryTitle: string;
+  defaultDescription: string;
+  defaultUnit: string;
+  defaultRate: number;
+}
+
+const DEFAULT_RATES_BY_SERVICE_ID: Record<string, { unit: string; rate: number }> = {
+  'suction-vehicle-ops': { unit: 'Trip', rate: 8500 },
+  'industrial-sludge-evacuation': { unit: 'Trip', rate: 9500 },
+  'etp-stp-cleaning': { unit: 'Job', rate: 18000 },
+  'liquid-waste-extraction': { unit: 'Trip', rate: 7500 },
+  'water-tank-cleaning': { unit: 'Tank', rate: 6500 },
+  'drain-jetting': { unit: 'Shift', rate: 12000 },
+  'sewer-line-dechoking': { unit: 'Job', rate: 8500 },
+  'stormwater-drain-upkeep': { unit: 'Running Mtr', rate: 450 },
+  'septic-tank-cleaning': { unit: 'Trip', rate: 7500 },
+  'civil-repair-reconstruction': { unit: 'Lump Sum', rate: 25000 },
+  'manhole-chamber-building': { unit: 'Nos', rate: 14500 },
+  'concrete-pipeline-laying': { unit: 'Running Mtr', rate: 1850 },
+};
+
+export const QUOTATION_SERVICE_PRESETS: QuotationServicePreset[] = SERVICES_DATA.map((service) => {
+  const defaults = DEFAULT_RATES_BY_SERVICE_ID[service.id] || { unit: 'Job', rate: 8500 };
+  return {
+    id: service.id,
+    title: service.title,
+    categoryTitle: service.categoryTitle,
+    defaultDescription: `${service.title} — ${service.shortDesc}`,
+    defaultUnit: defaults.unit,
+    defaultRate: defaults.rate,
+  };
+});
+
 export interface QuotationLineItem {
   id: string;
+  serviceOption?: string; // service title or '__manual__'
   description: string;
   unit: string; // e.g. 'Trip', 'Per Meter', 'Day', 'Fixed'
   quantity: number;
@@ -59,3 +100,4 @@ export function generateQuotationNumber(sequenceNumber: number): string {
   const padded = String(sequenceNumber).padStart(3, '0');
   return `BBE-QT-${year}-${padded}`;
 }
+
