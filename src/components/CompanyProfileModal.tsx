@@ -255,76 +255,68 @@ export const CompanyProfileModal: React.FC<CompanyProfileModalProps> = ({ isOpen
             <div className="space-y-4">
               <div>
                 <h3 className="font-bold text-xs uppercase text-blue-800 tracking-wider mb-1">
-                  A. Industrial Cleaning & Mechanized Suction Operations
+                  A. Main Industrial Services (1 to 8)
                 </h3>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-700">
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Mechanized Suction Vehicle Operations (O2Zone Tankers)
+                    1. ETP & STP Tank Cleaning
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Industrial Sludge Evacuation & Viscous Sediment Removal
+                    2. High-Pressure Drain Cleaning
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    ETP & STP Aerobic/Anaerobic Tank Desludging
+                    3. Suction Tanker Services
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Neutralized Liquid Chemical Waste Extraction
+                    4. Domestic & Industrial Water Tank Cleaning
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Underground and Overhead Water Tank Mechanized Cleaning
+                    5. Industrial Sludge Removal
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    6. Sewer Line Cleaning & Blockage Removal
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    7. Storm Water Drain Cleaning
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    8. Concrete Pipeline & Chamber Construction
                   </li>
                 </ul>
               </div>
 
               <div>
                 <h3 className="font-bold text-xs uppercase text-blue-800 tracking-wider mb-1">
-                  B. Drainage & Sewer Management
+                  B. Additional Specialized Services
                 </h3>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-700">
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    High-Pressure Water Jetting for Industrial Pipe Scouring
+                    Liquid Waste Removal
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Main Sewer Line De-Choking & Hydraulic Restoration
+                    Septic Tank Cleaning
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Septic Tank Vacuum Cleaning (Zero Scavenging)
+                    Civil Repairs & Reconstruction
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Monsoon Storm Water Drain & Culvert Upkeep
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <h3 className="font-bold text-xs uppercase text-blue-800 tracking-wider mb-1">
-                  C. Civil Engineering Infrastructure
-                </h3>
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-slate-700">
-                  <li className="flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Civil Repair & Concrete Trench Reinstatement
+                    Manhole & Chamber Construction
                   </li>
                   <li className="flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Manhole & Inspection Chamber Construction (Brick/RCC)
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    Heavy Duty CI / DI Manhole Cover Installation
-                  </li>
-                  <li className="flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    RCC Hume Pipe Laying & Utility Trench Excavation
+                    Turnkey Projects
                   </li>
                 </ul>
               </div>

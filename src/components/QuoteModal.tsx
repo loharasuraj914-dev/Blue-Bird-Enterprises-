@@ -1,11 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, CheckCircle, AlertCircle, MessageSquare } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, MessageSquare } from 'lucide-react';
 import {
   sanitizeTenDigitMobile,
   validateQuoteMandatoryFields,
 } from '../utils/validation.ts';
 import { SupabaseService } from '../services/supabaseService.ts';
-import { COMPANY_DETAILS, SERVICES_DATA } from '../data/companyData.ts';
+import {
+  COMPANY_DETAILS,
+  SERVICES_DATA,
+  MAIN_SERVICE_NAMES,
+  ADDITIONAL_SERVICE_NAMES,
+  normalizeServiceName,
+} from '../data/companyData.ts';
 
 interface QuoteModalProps {
   isOpen: boolean;
@@ -22,7 +28,11 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
   const [companyName, setCompanyName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
-  const [serviceRequired, setServiceRequired] = useState(prefilledService || SERVICES_DATA[0].title);
+  const [serviceRequired, setServiceRequired] = useState(
+    prefilledService ? normalizeServiceName(prefilledService) : ''
+  );
+  const [additionalServices, setAdditionalServices] = useState<string[]>([]);
+  const [showMultiSelect, setShowMultiSelect] = useState(false);
   const [siteLocation, setSiteLocation] = useState('');
   const [workDescription, setWorkDescription] = useState('');
   const [preferredCallbackTime, setPreferredCallbackTime] = useState('Morning (9 AM - 1 PM)');
@@ -33,11 +43,27 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
 
   useEffect(() => {
     if (prefilledService) {
-      setServiceRequired(prefilledService);
+      setServiceRequired(normalizeServiceName(prefilledService));
     }
   }, [prefilledService]);
 
   if (!isOpen) return null;
+
+  const toggleAdditionalService = (name: string) => {
+    setAdditionalServices((prev) =>
+      prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
+    );
+  };
+
+  const combinedRequestedService = () => {
+    const set = new Set<string>();
+    if (serviceRequired) set.add(serviceRequired);
+    for (const s of additionalServices) {
+      if (s) set.add(s);
+    }
+    if (set.size === 0) return SERVICES_DATA[0].title;
+    return Array.from(set).join(', ');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +89,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
         companyName: companyName.trim(),
         phone: sanitizeTenDigitMobile(mobileNumber),
         email: email.trim(),
-        requestedService: serviceRequired || SERVICES_DATA[0].title,
+        requestedService: combinedRequestedService(),
         siteLocation: siteLocation.trim() || 'Not specified',
         preferredCallback: preferredCallbackTime,
         workDescription: workDescription.trim() || 'Quotation requested',
@@ -100,7 +126,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
               {COMPANY_DETAILS.name}
             </div>
             <h3 className="font-heading text-lg font-bold">
-              Get Free Quote
+              Get a Free Quote
             </h3>
           </div>
           <button
@@ -134,7 +160,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
               <div className="flex flex-col gap-2">
                 <a
                   href={`https://wa.me/${COMPANY_DETAILS.whatsappNumber}?text=${encodeURIComponent(
-                    `Hello Blue Bird Enterprises, I requested a quote for ${serviceRequired || 'Industrial Services'}. Ref: ${successRef}`
+                    `Hello Blue Bird Enterprises, I requested a quote for ${combinedRequestedService()}. Ref: ${successRef}`
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -225,21 +251,65 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Service Required <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Service Required <span className="text-[10px] font-normal text-slate-400">(Select one or multiple)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowMultiSelect((prev) => !prev)}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                  >
+                    {showMultiSelect ? 'Hide Multiple Selection' : '+ Select Multiple Services'}
+                  </button>
+                </div>
                 <select
                   value={serviceRequired}
                   onChange={(e) => setServiceRequired(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50"
                 >
-                  {SERVICES_DATA.map((s) => (
-                    <option key={s.id} value={s.title}>
-                      {s.title}
-                    </option>
-                  ))}
-                  <option value="Turnkey Drainage / Industrial Cleaning">Turnkey Project</option>
+                  <option value="">Select Service</option>
+                  <optgroup label="Main Services">
+                    {MAIN_SERVICE_NAMES.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Additional Services">
+                    {ADDITIONAL_SERVICE_NAMES.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+
+                {showMultiSelect && (
+                  <div className="mt-2 p-2.5 rounded-lg border border-slate-200 bg-slate-50 max-h-40 overflow-y-auto space-y-1.5">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Check additional services to include:
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {SERVICES_DATA.map((s) => (
+                        <label
+                          key={s.id}
+                          className="flex items-center gap-1.5 text-[11px] text-slate-700 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={
+                              serviceRequired === s.title || additionalServices.includes(s.title)
+                            }
+                            onChange={() => toggleAdditionalService(s.title)}
+                            className="rounded border-slate-300 text-blue-600"
+                          />
+                          <span className="truncate">{s.title}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -263,7 +333,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                   rows={2}
                   value={workDescription}
                   onChange={(e) => setWorkDescription(e.target.value)}
-                  placeholder="Sludge volume, chamber depth, choke symptoms... (Optional)"
+                  placeholder="Sludge volume, chamber depth, blockage details... (Optional)"
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-900 bg-slate-50"
                 ></textarea>
               </div>

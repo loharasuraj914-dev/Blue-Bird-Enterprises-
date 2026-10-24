@@ -3,7 +3,9 @@
  * Standard industrial quotation calculations with GST (CGST 9% + SGST 9% or IGST 18%).
  */
 
-import { SERVICES_DATA } from '../data/companyData.ts';
+import { SERVICES_DATA, normalizeServiceName } from '../data/companyData.ts';
+
+export { normalizeServiceName };
 
 export const MANUAL_SERVICE_OPTION_VALUE = '__manual__';
 
@@ -17,18 +19,19 @@ export interface QuotationServicePreset {
 }
 
 const DEFAULT_RATES_BY_SERVICE_ID: Record<string, { unit: string; rate: number }> = {
-  'suction-vehicle-ops': { unit: 'Trip', rate: 8500 },
-  'industrial-sludge-evacuation': { unit: 'Trip', rate: 9500 },
   'etp-stp-cleaning': { unit: 'Job', rate: 18000 },
-  'liquid-waste-extraction': { unit: 'Trip', rate: 7500 },
-  'water-tank-cleaning': { unit: 'Tank', rate: 6500 },
   'drain-jetting': { unit: 'Shift', rate: 12000 },
+  'suction-vehicle-ops': { unit: 'Trip', rate: 8500 },
+  'water-tank-cleaning': { unit: 'Tank', rate: 6500 },
+  'industrial-sludge-evacuation': { unit: 'Trip', rate: 9500 },
   'sewer-line-dechoking': { unit: 'Job', rate: 8500 },
   'stormwater-drain-upkeep': { unit: 'Running Mtr', rate: 450 },
+  'concrete-pipeline-laying': { unit: 'Running Mtr', rate: 1850 },
+  'liquid-waste-extraction': { unit: 'Trip', rate: 7500 },
   'septic-tank-cleaning': { unit: 'Trip', rate: 7500 },
   'civil-repair-reconstruction': { unit: 'Lump Sum', rate: 25000 },
   'manhole-chamber-building': { unit: 'Nos', rate: 14500 },
-  'concrete-pipeline-laying': { unit: 'Running Mtr', rate: 1850 },
+  'turnkey-projects': { unit: 'Lump Sum', rate: 45000 },
 };
 
 export const QUOTATION_SERVICE_PRESETS: QuotationServicePreset[] = SERVICES_DATA.map((service) => {
@@ -100,4 +103,28 @@ export function generateQuotationNumber(sequenceNumber: number): string {
   const padded = String(sequenceNumber).padStart(3, '0');
   return `BBE-QT-${year}-${padded}`;
 }
+
+export const DEFAULT_QUOTATION_TERMS: string[] = [
+  'Water and power connections to be provided at site by client.',
+  'Payment: 50% advance along with work order, balance upon completion.',
+  'Safe vehicle access to sumps to be facilitated by client.',
+  'Validity: 30 days.',
+];
+
+/**
+ * Strips any leading list number prefix such as "1. ", "1) ", or repeated "1. 1. "
+ * so that numbered lists and PDF generators never render duplicate prefixes like "1. 1.".
+ */
+export function stripLeadingTermNumber(term: string): string {
+  return String(term || '')
+    .replace(/^\s*(?:\d+\s*[\.\)]\s*)+/, '')
+    .trim();
+}
+
+export function normalizeQuotationTerms(terms: string[]): string[] {
+  return (terms || [])
+    .map((t) => stripLeadingTermNumber(t))
+    .filter((t) => t.length > 0);
+}
+
 

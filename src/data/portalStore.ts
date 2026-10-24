@@ -4,8 +4,13 @@
  */
 
 import { generateInquiryRef } from '../utils/validation.ts';
-import { calculateQuotationTotals, generateQuotationNumber, QuotationLineItem } from '../utils/quotation.ts';
-import { COMPANY_DETAILS } from './companyData.ts';
+import {
+  calculateQuotationTotals,
+  generateQuotationNumber,
+  QuotationLineItem,
+  normalizeQuotationTerms,
+} from '../utils/quotation.ts';
+import { COMPANY_DETAILS, normalizeServiceName } from './companyData.ts';
 
 export type LeadStatus = 'new' | 'contacted' | 'quotation_sent' | 'converted' | 'closed';
 export type CallbackStatus = 'pending' | 'completed' | 'rescheduled' | 'cancelled';
@@ -101,7 +106,7 @@ const SEED_INQUIRIES: CustomerInquiry[] = [
     companyName: 'Apex Fine Chemicals Ltd.',
     mobileNumber: '9820145678',
     email: 'rmehta@apexfinechem.com',
-    serviceRequired: 'ETP / STP Tank Cleaning',
+    serviceRequired: 'ETP & STP Tank Cleaning',
     siteLocation: 'TTC Industrial Area, Pawane MIDC, Plot C-42',
     preferredCallback: 'Morning (10:00 AM - 1:00 PM)',
     workDescription: 'Need bi-annual desludging of 2 effluent holding tanks (~50KL capacity each). Requires confined space PPE protocol.',
@@ -117,7 +122,7 @@ const SEED_INQUIRIES: CustomerInquiry[] = [
     companyName: 'Navi Mumbai Cold Logistics Hub',
     mobileNumber: '9967123490',
     email: 'operations@nmcoldlogistics.in',
-    serviceRequired: 'High-Pressure Drain Jetting',
+    serviceRequired: 'High-Pressure Drain Cleaning',
     siteLocation: 'Taloja MIDC, Sector 18, Navi Mumbai',
     preferredCallback: 'Afternoon (2:00 PM - 5:00 PM)',
     workDescription: 'Main 300mm stormwater drainage line partially choked with silt and packaging debris causing pooling in loading bay.',
@@ -133,7 +138,7 @@ const SEED_INQUIRIES: CustomerInquiry[] = [
     companyName: 'Precision Engineering Components',
     mobileNumber: '9867012345',
     email: 'spatil@pecindia.co.in',
-    serviceRequired: 'Suction Vehicle Operations',
+    serviceRequired: 'Suction Tanker Services',
     siteLocation: 'Turbhe MIDC, Navi Mumbai',
     preferredCallback: 'Immediate / Emergency',
     workDescription: 'Underground coolant pit overflow evacuation. Approximately 8000 liters of oily wastewater to be suctioned.',
@@ -323,6 +328,7 @@ export class PortalStorage {
         .filter((item) => !permSet.has(item.id) && !permSet.has(item.referenceNo))
         .map((item) => ({
           ...item,
+          serviceRequired: normalizeServiceName(item.serviceRequired) || item.serviceRequired,
           deletedAt:
             item.deletedAt !== undefined
               ? item.deletedAt
@@ -462,6 +468,16 @@ export class PortalStorage {
         .filter((item) => !permSet.has(item.id) && !permSet.has(item.quotationNo))
         .map((item) => ({
           ...item,
+          items: Array.isArray(item.items)
+            ? item.items.map((line) => ({
+                ...line,
+                serviceOption: line.serviceOption
+                  ? normalizeServiceName(line.serviceOption) || line.serviceOption
+                  : line.serviceOption,
+                description: normalizeServiceName(line.description) || line.description,
+              }))
+            : [],
+          terms: normalizeQuotationTerms(item.terms || []),
           deletedAt:
             item.deletedAt !== undefined
               ? item.deletedAt

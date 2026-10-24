@@ -13,8 +13,16 @@ import {
   generateQuotationNumber,
   QUOTATION_SERVICE_PRESETS,
   MANUAL_SERVICE_OPTION_VALUE,
+  stripLeadingTermNumber,
+  normalizeQuotationTerms,
 } from './quotation.ts';
-import { SERVICES_DATA } from '../data/companyData.ts';
+import {
+  SERVICES_DATA,
+  CORE_INTRODUCTION_SERVICES,
+  MAIN_SERVICE_NAMES,
+  ADDITIONAL_SERVICE_NAMES,
+  normalizeServiceName,
+} from '../data/companyData.ts';
 import { verifyOwnerCredentials } from './auth.ts';
 
 test('validateIndianPhone correctly validates 10-digit Indian numbers', () => {
@@ -84,6 +92,7 @@ test('validateQuoteMandatoryFields requires only Your Name, Company/Facility Nam
 
 test('QUOTATION_SERVICE_PRESETS includes all listed services with short descriptions and supports manual option', () => {
   assert.equal(QUOTATION_SERVICE_PRESETS.length, SERVICES_DATA.length);
+  assert.equal(SERVICES_DATA.length, 13);
   for (const service of SERVICES_DATA) {
     const preset = QUOTATION_SERVICE_PRESETS.find((p) => p.title === service.title);
     assert.ok(
@@ -128,13 +137,9 @@ test('validateEmail validates format', () => {
 
 test('calculateQuotationTotals calculates 18% GST (CGST 9% + SGST 9%) correctly', () => {
   const items = [
-    { id: '1', description: 'Vacuum Suction Tanker Trip (6000L)', unit: 'Trip', quantity: 2, unitRate: 8500 },
-    { id: '2', description: 'Drain Line Jetting & Desilting', unit: 'Day', quantity: 1, unitRate: 12000 }
+    { id: '1', description: 'Suction Tanker Services', unit: 'Trip', quantity: 2, unitRate: 8500 },
+    { id: '2', description: 'High-Pressure Drain Cleaning', unit: 'Day', quantity: 1, unitRate: 12000 }
   ];
-  // Subtotal = 17000 + 12000 = 29000
-  // GST 18% = 5220
-  // CGST = 2610, SGST = 2610
-  // Grand Total = 34220
   const totals = calculateQuotationTotals(items);
   assert.equal(totals.subtotal, 29000);
   assert.equal(totals.totalGst, 5220);
@@ -171,3 +176,85 @@ test('resolvePublicAsset resolves paths correctly for root, /Blue-Bird-Enterpris
     '/assets/aistudio/vacuum_tanker_service.jpg'
   );
 });
+
+test('stripLeadingTermNumber and normalizeQuotationTerms prevent duplicate 1. 1. to 4. 4. numbering', () => {
+  const rawTerms = [
+    '1. Water and power connections to be provided at site by client.',
+    '2. 2. Payment: 50% advance along with work order, balance upon completion.',
+    '3. Safe vehicle access to sumps to be facilitated by client.',
+    '4. 4. Validity: 30 days.',
+  ];
+  const normalized = normalizeQuotationTerms(rawTerms);
+  assert.deepEqual(normalized, [
+    'Water and power connections to be provided at site by client.',
+    'Payment: 50% advance along with work order, balance upon completion.',
+    'Safe vehicle access to sumps to be facilitated by client.',
+    'Validity: 30 days.',
+  ]);
+  const numbered = normalized.map((t, i) => `${i + 1}. ${stripLeadingTermNumber(t)}`);
+  assert.equal(numbered[0], '1. Water and power connections to be provided at site by client.');
+  assert.equal(numbered[1], '2. Payment: 50% advance along with work order, balance upon completion.');
+  assert.equal(numbered[2], '3. Safe vehicle access to sumps to be facilitated by client.');
+  assert.equal(numbered[3], '4. Validity: 30 days.');
+});
+
+test('CORE_INTRODUCTION_SERVICES contains all 8 main services in exact order 1 to 8', () => {
+  assert.equal(CORE_INTRODUCTION_SERVICES.length, 8);
+  assert.deepEqual(
+    CORE_INTRODUCTION_SERVICES.map((s) => s.title),
+    [
+      'ETP & STP Tank Cleaning',
+      'High-Pressure Drain Cleaning',
+      'Suction Tanker Services',
+      'Domestic & Industrial Water Tank Cleaning',
+      'Industrial Sludge Removal',
+      'Sewer Line Cleaning & Blockage Removal',
+      'Storm Water Drain Cleaning',
+      'Concrete Pipeline & Chamber Construction',
+    ]
+  );
+  assert.deepEqual(CORE_INTRODUCTION_SERVICES.map((s) => s.title), [...MAIN_SERVICE_NAMES]);
+});
+
+test('ADDITIONAL_SERVICE_NAMES retains all 5 additional genuine services in simple English', () => {
+  assert.deepEqual([...ADDITIONAL_SERVICE_NAMES], [
+    'Liquid Waste Removal',
+    'Septic Tank Cleaning',
+    'Civil Repairs & Reconstruction',
+    'Manhole & Chamber Construction',
+    'Turnkey Projects',
+  ]);
+});
+
+test('normalizeServiceName maps legacy technical names to simple English names for backward compatibility', () => {
+  assert.equal(
+    normalizeServiceName('Mechanized Suction Tanker Operations'),
+    'Suction Tanker Services'
+  );
+  assert.equal(
+    normalizeServiceName('ETP & STP Tank Desludging'),
+    'ETP & STP Tank Cleaning'
+  );
+  assert.equal(
+    normalizeServiceName('High-Pressure Drain Jetting'),
+    'High-Pressure Drain Cleaning'
+  );
+  assert.equal(
+    normalizeServiceName('Liquid Waste Extraction'),
+    'Liquid Waste Removal'
+  );
+  assert.equal(
+    normalizeServiceName('Septic Tank Mechanized Cleaning'),
+    'Septic Tank Cleaning'
+  );
+  assert.equal(
+    normalizeServiceName('Multiple Services / Turnkey Project'),
+    'Turnkey Projects'
+  );
+  assert.equal(
+    normalizeServiceName('ETP & STP Tank Desludging, High-Pressure Drain Jetting'),
+    'ETP & STP Tank Cleaning, High-Pressure Drain Cleaning'
+  );
+});
+
+

@@ -93,14 +93,16 @@ export const Footer: React.FC<FooterProps> = ({
               Service Disciplines
             </h4>
             <ul className="space-y-1.5 text-xs">
-              <li>Mechanized Suction Tanker Operations</li>
-              <li>Industrial Sludge Evacuation</li>
-              <li>ETP & STP Tank Desludging</li>
-              <li>High-Pressure Drain Jetting</li>
-              <li>Sewer Line De-Choking & Clearing</li>
-              <li>Storm Water Channel Upkeep</li>
-              <li>Concrete Pipeline & Chamber Works</li>
-              <li>Domestic & Industrial Water Tank Wash</li>
+              <li>ETP & STP Tank Cleaning</li>
+              <li>High-Pressure Drain Cleaning</li>
+              <li>Suction Tanker Services</li>
+              <li>Domestic & Industrial Water Tank Cleaning</li>
+              <li>Industrial Sludge Removal</li>
+              <li>Sewer Line Cleaning & Blockage Removal</li>
+              <li>Storm Water Drain Cleaning</li>
+              <li>Concrete Pipeline & Chamber Construction</li>
+              <li>Liquid Waste Removal & Septic Tank Cleaning</li>
+              <li>Civil Repairs, Manhole & Turnkey Projects</li>
             </ul>
           </div>
 

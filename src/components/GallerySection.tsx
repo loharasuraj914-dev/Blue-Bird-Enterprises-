@@ -11,9 +11,9 @@ export const GallerySection: React.FC<GallerySectionProps> = () => {
 
   const filterTabs = [
     { id: 'all', label: 'All Operations' },
-    { id: 'suction', label: 'Vacuum Tanker Operations' },
-    { id: 'drainage', label: 'Drain Jetting & Sewer' },
-    { id: 'etp', label: 'ETP & Tank Cleaning' },
+    { id: 'suction', label: 'Suction Tanker Services' },
+    { id: 'drainage', label: 'Drain & Sewer Cleaning' },
+    { id: 'etp', label: 'ETP, STP & Tank Cleaning' },
   ];
 
   const filteredItems = selectedFilter === 'all'
@@ -34,7 +34,7 @@ export const GallerySection: React.FC<GallerySectionProps> = () => {
             Projects & Operations Gallery
           </h2>
           <p className="text-base text-slate-400 leading-relaxed">
-            Actual on-site photographs showcasing our mechanized suction tankers, high-pressure jetting teams, and PPE-equipped technicians executing operations across Maharashtra.
+            Actual on-site photographs showcasing our suction tankers, high-pressure drain cleaning teams, and PPE-equipped technicians executing tank cleaning and civil works across Maharashtra.
           </p>
         </div>
 

@@ -7,6 +7,7 @@
 import { jsPDF } from 'jspdf';
 import { QuotationRecord } from '../data/portalStore.ts';
 import { COMPANY_DETAILS } from '../data/companyData.ts';
+import { normalizeQuotationTerms, stripLeadingTermNumber } from './quotation.ts';
 
 function formatCurrency(amount: number): string {
   if (isNaN(amount)) return 'INR 0.00';
@@ -288,15 +289,21 @@ export async function generateQuotationPDF(quotation: QuotationRecord): Promise<
   doc.setFontSize(7);
   doc.setTextColor(71, 85, 105);
 
-  const allTerms = [
-    ...(quotation.terms || []),
+  const cleanedTerms = normalizeQuotationTerms(quotation.terms || []);
+  const defaultExtraTerms = [
     'All industrial operations will be executed using mechanized suction/jetting units with trained PPE-compliant personnel.',
     'Quotation valid for 30 days from date of issue. Site accessibility to be ensured by client.',
-  ];
+  ].filter(
+    (extra) =>
+      !cleanedTerms.some((t) => t.toLowerCase().includes(extra.slice(0, 25).toLowerCase()))
+  );
+
+  const allTerms = [...cleanedTerms, ...defaultExtraTerms];
 
   allTerms.slice(0, 5).forEach((term, tIdx) => {
     checkPageBreak(6);
-    const splitTerm = doc.splitTextToSize(`${tIdx + 1}. ${term}`, contentWidth - 4);
+    const cleanTerm = stripLeadingTermNumber(term);
+    const splitTerm = doc.splitTextToSize(`${tIdx + 1}. ${cleanTerm}`, contentWidth - 4);
     doc.text(splitTerm, marginX, y);
     y += splitTerm.length * 3.5;
   });

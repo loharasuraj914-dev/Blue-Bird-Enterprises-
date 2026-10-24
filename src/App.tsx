@@ -85,7 +85,7 @@ export default function App() {
       <main className="flex-1">
         {/* 1. Hero Section */}
         <Hero
-          onOpenQuoteModal={() => handleOpenQuoteModal()}
+          onOpenQuoteModal={handleOpenQuoteModal}
           onScrollToSection={handleScrollToSection}
         />
 

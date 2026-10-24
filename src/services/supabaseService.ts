@@ -17,7 +17,13 @@ import {
   PortalEntityType,
 } from '../data/portalStore.ts';
 import { generateInquiryRef } from '../utils/validation.ts';
-import { calculateQuotationTotals, generateQuotationNumber, QuotationLineItem } from '../utils/quotation.ts';
+import {
+  calculateQuotationTotals,
+  generateQuotationNumber,
+  QuotationLineItem,
+  normalizeQuotationTerms,
+  normalizeServiceName,
+} from '../utils/quotation.ts';
 
 export interface BookingRecord {
   id: string;
@@ -148,7 +154,7 @@ export class SupabaseService {
             companyName: row.company_name || 'Industrial Client',
             mobileNumber: row.phone,
             email: row.email || 'Not specified',
-            serviceRequired: row.requested_service,
+            serviceRequired: normalizeServiceName(row.requested_service),
             siteLocation: row.site_location,
             preferredCallback: row.preferred_callback,
             workDescription: row.description || '',
@@ -378,7 +384,7 @@ export class SupabaseService {
             companyName: 'Precision Engineering Components',
             phone: '9867012345',
             email: 'spatil@pecindia.co.in',
-            requestedService: 'Suction Vehicle Operations',
+            requestedService: 'Suction Tanker Services',
             siteAddress: 'Plot W-12, Turbhe MIDC, Navi Mumbai',
             scheduledDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
             scheduledTime: '09:30 AM',
@@ -400,6 +406,7 @@ export class SupabaseService {
         .filter((item) => !permSet.has(item.id) && !permSet.has(item.bookingReference))
         .map((item) => ({
           ...item,
+          requestedService: normalizeServiceName(item.requestedService),
           deletedAt:
             item.deletedAt !== undefined
               ? item.deletedAt
@@ -502,7 +509,7 @@ export class SupabaseService {
             companyName: row.company_name || 'Industrial Client',
             phone: row.phone,
             email: row.email,
-            requestedService: row.requested_service,
+            requestedService: normalizeServiceName(row.requested_service),
             siteAddress: row.site_address,
             scheduledDate: row.scheduled_date,
             scheduledTime: row.scheduled_time || '09:00 AM',
@@ -615,7 +622,7 @@ export class SupabaseService {
       sgst_amount: totals.sgst,
       total_gst: totals.totalGst,
       grand_total: totals.grandTotal,
-      terms: data.terms,
+      terms: normalizeQuotationTerms(data.terms || []),
     };
 
     try {
@@ -698,13 +705,22 @@ export class SupabaseService {
             date: row.date,
             validityDays: row.validity_days || 30,
             status: row.status as QuotationStatus,
-            items: Array.isArray(row.line_items) ? row.line_items : [],
+            items: Array.isArray(row.line_items)
+              ? row.line_items.map((li: any) => ({
+                  ...li,
+                  serviceOption:
+                    li.serviceOption && li.serviceOption !== '__manual__'
+                      ? normalizeServiceName(li.serviceOption)
+                      : li.serviceOption,
+                  description: normalizeServiceName(li.description || ''),
+                }))
+              : [],
             subtotal: Number(row.taxable_amount || 0),
             cgst: Number(row.cgst_amount || 0),
             sgst: Number(row.sgst_amount || 0),
             totalGst: Number(row.total_gst || 0),
             grandTotal: Number(row.grand_total || 0),
-            terms: Array.isArray(row.terms) ? row.terms : [],
+            terms: normalizeQuotationTerms(Array.isArray(row.terms) ? row.terms : []),
             deletedAt:
               row.deleted_at !== undefined && row.deleted_at !== null
                 ? row.deleted_at

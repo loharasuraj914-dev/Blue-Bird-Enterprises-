@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, Printer, Download, AlertCircle, Loader2 } from 'lucide-react';
 import { QuotationRecord } from '../../data/portalStore.ts';
 import { COMPANY_DETAILS } from '../../data/companyData.ts';
-import { formatINR } from '../../utils/quotation.ts';
+import { formatINR, normalizeQuotationTerms } from '../../utils/quotation.ts';
 import { generateQuotationPDF } from '../../utils/pdfGenerator.ts';
 
 interface PrintableQuotationModalProps {
@@ -245,15 +245,14 @@ export const PrintableQuotationModal: React.FC<PrintableQuotationModalProps> = (
           {/* Terms & Conditions */}
           <div className="text-xs space-y-2 border-t border-slate-200 pt-4 print-avoid-break">
             <span className="font-bold text-slate-900 uppercase text-[11px] block">
-              Terms & Conditions
+              Terms & Conditions:
             </span>
-            <ul className="list-decimal pl-5 space-y-1 text-slate-600 text-[11px]">
-              {quotation.terms.map((t, idx) => (
+            <ol className="list-decimal pl-5 space-y-1 text-slate-600 text-[11px]">
+              {normalizeQuotationTerms(quotation.terms || []).map((t, idx) => (
                 <li key={idx}>{t}</li>
               ))}
-              <li>Safety: Operations will be 100% mechanized. No hazardous manual scavenging.</li>
-              <li>Statutory taxes applicable as per Government of India GST notifications.</li>
-            </ul>
+              <li>All industrial operations will be executed using mechanized suction/jetting units with trained PPE-compliant personnel.</li>
+            </ol>
           </div>
 
           {/* Signatures */}

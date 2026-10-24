@@ -6,7 +6,13 @@ import {
   validateQuoteMandatoryFields,
 } from '../utils/validation.ts';
 import { SupabaseService } from '../services/supabaseService.ts';
-import { COMPANY_DETAILS, SERVICES_DATA } from '../data/companyData.ts';
+import {
+  COMPANY_DETAILS,
+  SERVICES_DATA,
+  MAIN_SERVICE_NAMES,
+  ADDITIONAL_SERVICE_NAMES,
+  normalizeServiceName,
+} from '../data/companyData.ts';
 
 interface InquiryQuoteSectionProps {
   initialService?: string;
@@ -24,7 +30,11 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
   const [companyName, setCompanyName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
-  const [serviceRequired, setServiceRequired] = useState(initialService || SERVICES_DATA[0].title);
+  const [serviceRequired, setServiceRequired] = useState(
+    initialService ? normalizeServiceName(initialService) : ''
+  );
+  const [additionalServices, setAdditionalServices] = useState<string[]>([]);
+  const [showMultiServices, setShowMultiServices] = useState(false);
   const [siteLocation, setSiteLocation] = useState('');
   const [workDescription, setWorkDescription] = useState('');
   const [preferredCallbackTime, setPreferredCallbackTime] = useState('Morning (9 AM - 1 PM)');
@@ -82,12 +92,22 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
         (workDescription.trim() || 'Quotation requested') +
         (fileName ? ` [Spec doc: ${fileName}]` : '');
 
+      const selectedServiceSet = new Set<string>();
+      if (serviceRequired) selectedServiceSet.add(serviceRequired);
+      for (const s of additionalServices) {
+        if (s) selectedServiceSet.add(s);
+      }
+      const finalRequestedService =
+        selectedServiceSet.size > 0
+          ? Array.from(selectedServiceSet).join(', ')
+          : SERVICES_DATA[0].title;
+
       const res = await SupabaseService.submitCustomerEnquiry({
         customerName: customerName.trim(),
         companyName: companyName.trim(),
         phone: sanitizeTenDigitMobile(mobileNumber),
         email: email.trim(),
-        requestedService: serviceRequired || SERVICES_DATA[0].title,
+        requestedService: finalRequestedService,
         siteLocation: siteLocation.trim() || 'Not specified',
         preferredCallback: preferredCallbackTime,
         workDescription: descriptionWithFile,
@@ -433,21 +453,66 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
-                          Service Required <span className="text-slate-400 font-normal">(Optional)</span>
-                        </label>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                            Service Required <span className="text-slate-400 font-normal">(Optional)</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setShowMultiServices((prev) => !prev)}
+                            className="text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                          >
+                            {showMultiServices ? 'Hide Multiple' : '+ Select Multiple'}
+                          </button>
+                        </div>
                         <select
                           value={serviceRequired}
                           onChange={(e) => setServiceRequired(e.target.value)}
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-sm text-slate-900 bg-slate-50/50"
                         >
-                          {SERVICES_DATA.map((s) => (
-                            <option key={s.id} value={s.title}>
-                              {s.title}
-                            </option>
-                          ))}
-                          <option value="Multiple Industrial Services">Multiple Services / Turnkey Project</option>
+                          <option value="">Select Service</option>
+                          <optgroup label="Main Services">
+                            {MAIN_SERVICE_NAMES.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Additional Services">
+                            {ADDITIONAL_SERVICE_NAMES.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </optgroup>
                         </select>
+                        {showMultiServices && (
+                          <div className="mt-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 max-h-40 overflow-y-auto space-y-1">
+                            {SERVICES_DATA.map((s) => (
+                              <label
+                                key={s.id}
+                                className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    serviceRequired === s.title ||
+                                    additionalServices.includes(s.title)
+                                  }
+                                  onChange={() =>
+                                    setAdditionalServices((prev) =>
+                                      prev.includes(s.title)
+                                        ? prev.filter((item) => item !== s.title)
+                                        : [...prev, s.title]
+                                    )
+                                  }
+                                  className="rounded border-slate-300 text-blue-600"
+                                />
+                                <span>{s.title}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div>
@@ -758,11 +823,23 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                           onChange={(e) => setBkService(e.target.value)}
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-blue-600 text-sm bg-slate-50/50"
                         >
-                          {SERVICES_DATA.map((s) => (
-                            <option key={s.id} value={s.title}>
-                              {s.title}
-                            </option>
-                          ))}
+                          <option value="" disabled>
+                            Select Service
+                          </option>
+                          <optgroup label="Main Services">
+                            {MAIN_SERVICE_NAMES.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="Additional Services">
+                            {ADDITIONAL_SERVICE_NAMES.map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ))}
+                          </optgroup>
                         </select>
                       </div>
 

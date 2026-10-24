@@ -45,6 +45,9 @@ import {
   QUOTATION_SERVICE_PRESETS,
   MANUAL_SERVICE_OPTION_VALUE,
   calculateQuotationTotals,
+  DEFAULT_QUOTATION_TERMS,
+  normalizeQuotationTerms,
+  normalizeServiceName,
 } from '../../utils/quotation.ts';
 import { sanitizeTenDigitMobile, cleanPhoneNumber } from '../../utils/validation.ts';
 import { PrintableQuotationModal } from './PrintableQuotationModal.tsx';
@@ -158,7 +161,7 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     },
   ]);
   const [newQuoteTerms, setNewQuoteTerms] = useState(
-    '1. Water and power connections to be provided at site by client.\n2. Payment: 50% advance along with work order, balance upon completion.\n3. Safe vehicle access to sumps to be facilitated by client.\n4. Validity: 30 days.'
+    DEFAULT_QUOTATION_TERMS.join('\n')
   );
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
@@ -661,7 +664,9 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
             },
           ]
     );
-    setNewQuoteTerms((q.terms || []).join('\n'));
+    setNewQuoteTerms(
+      normalizeQuotationTerms(q.terms && q.terms.length > 0 ? q.terms : DEFAULT_QUOTATION_TERMS).join('\n')
+    );
     setIsCreatingQuote(true);
   };
 
@@ -670,10 +675,7 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     e.preventDefault();
     if (!newQuoteClient.trim() || !newQuoteCompany.trim()) return;
 
-    const termsArray = newQuoteTerms
-      .split('\n')
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
+    const termsArray = normalizeQuotationTerms(newQuoteTerms.split('\n'));
 
     if (editingQuoteId) {
       const ok = await SupabaseService.updateQuotation(editingQuoteId, {
@@ -793,14 +795,15 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     setNewQuotePhone(sanitizeTenDigitMobile(cleanPhoneNumber(inquiry.mobileNumber)));
     setNewQuoteEmail(inquiry.email === 'Not specified' ? '' : inquiry.email);
     setNewQuoteAddress(inquiry.siteLocation === 'Not specified' ? '' : inquiry.siteLocation);
+    const normalizedSvc = normalizeServiceName(inquiry.serviceRequired);
     const matchedPreset = QUOTATION_SERVICE_PRESETS.find(
-      (p) => p.title === inquiry.serviceRequired
+      (p) => p.title === normalizedSvc
     );
     setNewQuoteItems([
       {
         id: '1',
         serviceOption: matchedPreset ? matchedPreset.title : MANUAL_SERVICE_OPTION_VALUE,
-        description: matchedPreset ? matchedPreset.title : inquiry.serviceRequired,
+        description: matchedPreset ? matchedPreset.title : normalizedSvc,
         unit: matchedPreset ? matchedPreset.defaultUnit : 'Job',
         quantity: 1,
         unitRate: matchedPreset ? matchedPreset.defaultRate : 12000,
@@ -2660,7 +2663,7 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Service</label>
                     <select
-                      value={editingRecord.data.serviceRequired || ''}
+                      value={normalizeServiceName(editingRecord.data.serviceRequired || '')}
                       onChange={(e) =>
                         setEditingRecord({
                           ...editingRecord,
@@ -2669,6 +2672,9 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                       }
                       className="w-full p-2 border rounded bg-slate-50"
                     >
+                      <option value="" disabled>
+                        Select Service
+                      </option>
                       {QUOTATION_SERVICE_PRESETS.map((p) => (
                         <option key={p.id} value={p.title}>
                           {p.title}
@@ -2729,7 +2735,7 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                   <div>
                     <label className="font-bold text-slate-700 block mb-1">Service</label>
                     <select
-                      value={editingRecord.data.requestedService || ''}
+                      value={normalizeServiceName(editingRecord.data.requestedService || '')}
                       onChange={(e) =>
                         setEditingRecord({
                           ...editingRecord,
@@ -2738,6 +2744,9 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                       }
                       className="w-full p-2 border rounded bg-slate-50"
                     >
+                      <option value="" disabled>
+                        Select Service
+                      </option>
                       {QUOTATION_SERVICE_PRESETS.map((p) => (
                         <option key={p.id} value={p.title}>
                           {p.title}
