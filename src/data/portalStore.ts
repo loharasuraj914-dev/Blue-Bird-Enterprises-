@@ -10,6 +10,12 @@ import { COMPANY_DETAILS } from './companyData.ts';
 export type LeadStatus = 'new' | 'contacted' | 'quotation_sent' | 'converted' | 'closed';
 export type CallbackStatus = 'pending' | 'completed' | 'rescheduled' | 'cancelled';
 export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+export type PortalEntityType = 'enquiries' | 'callbacks' | 'bookings' | 'quotations';
+
+export interface DeletionRegistry {
+  softDeleted: Record<string, string>; // key -> ISO deleted_at timestamp
+  permanentlyDeleted: string[]; // array of permanently deleted IDs/references
+}
 
 export interface CustomerInquiry {
   id: string;
@@ -25,6 +31,7 @@ export interface CustomerInquiry {
   status: LeadStatus;
   internalNotes: string;
   followUpDate?: string;
+  deletedAt?: string | null;
   createdAt: string;
 }
 
@@ -38,6 +45,7 @@ export interface CallbackRequest {
   preferredTime: string;
   status: CallbackStatus;
   notes: string;
+  deletedAt?: string | null;
   createdAt: string;
 }
 
@@ -60,6 +68,7 @@ export interface QuotationRecord {
   totalGst: number;
   grandTotal: number;
   terms: string[];
+  deletedAt?: string | null;
 }
 
 export interface BusinessSettings {
@@ -80,6 +89,7 @@ const STORAGE_KEYS = {
   QUOTATIONS: 'bbe_quotations_v1',
   SETTINGS: 'bbe_settings_v1',
   AUTH: 'bbe_auth_session_v1',
+  DELETION_REGISTRY: 'bbe_deleted_registry_v1',
 };
 
 // Seed initial inquiries for immediate realistic functionality
@@ -216,15 +226,108 @@ export const DEFAULT_SETTINGS: BusinessSettings = {
   emergencyBannerActive: true
 };
 
+const memoryStore = new Map<string, string>();
+const safeStorage = {
+  getItem(key: string): string | null {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+        return localStorage.getItem(key);
+      }
+    } catch {
+      // fallback
+    }
+    return memoryStore.get(key) ?? null;
+  },
+  setItem(key: string, value: string): void {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function') {
+        localStorage.setItem(key, value);
+        return;
+      }
+    } catch {
+      // fallback
+    }
+    memoryStore.set(key, value);
+  },
+  removeItem(key: string): void {
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.removeItem === 'function') {
+        localStorage.removeItem(key);
+        return;
+      }
+    } catch {
+      // fallback
+    }
+    memoryStore.delete(key);
+  },
+};
+
 export class PortalStorage {
+  static getDeletionRegistry(): DeletionRegistry {
+    try {
+      const raw = safeStorage.getItem(STORAGE_KEYS.DELETION_REGISTRY);
+      if (!raw) return { softDeleted: {}, permanentlyDeleted: [] };
+      const parsed = JSON.parse(raw);
+      return {
+        softDeleted: parsed.softDeleted || {},
+        permanentlyDeleted: Array.isArray(parsed.permanentlyDeleted) ? parsed.permanentlyDeleted : [],
+      };
+    } catch {
+      return { softDeleted: {}, permanentlyDeleted: [] };
+    }
+  }
+
+  static saveDeletionRegistry(reg: DeletionRegistry): void {
+    safeStorage.setItem(STORAGE_KEYS.DELETION_REGISTRY, JSON.stringify(reg));
+  }
+
+  static markSoftDeleted(keys: string[], timestamp: string): void {
+    const reg = this.getDeletionRegistry();
+    for (const key of keys) {
+      if (key) reg.softDeleted[key] = timestamp;
+    }
+    this.saveDeletionRegistry(reg);
+  }
+
+  static clearSoftDeleted(keys: string[]): void {
+    const reg = this.getDeletionRegistry();
+    for (const key of keys) {
+      if (key) delete reg.softDeleted[key];
+    }
+    this.saveDeletionRegistry(reg);
+  }
+
+  static markPermanentlyDeleted(keys: string[]): void {
+    const reg = this.getDeletionRegistry();
+    const set = new Set(reg.permanentlyDeleted);
+    for (const key of keys) {
+      if (key) {
+        set.add(key);
+        delete reg.softDeleted[key];
+      }
+    }
+    reg.permanentlyDeleted = Array.from(set);
+    this.saveDeletionRegistry(reg);
+  }
+
   static getInquiries(): CustomerInquiry[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.INQUIRIES);
+      const data = safeStorage.getItem(STORAGE_KEYS.INQUIRIES);
+      const list: CustomerInquiry[] = data ? JSON.parse(data) : SEED_INQUIRIES;
       if (!data) {
-        localStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(SEED_INQUIRIES));
-        return SEED_INQUIRIES;
+        safeStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(SEED_INQUIRIES));
       }
-      return JSON.parse(data);
+      const reg = this.getDeletionRegistry();
+      const permSet = new Set(reg.permanentlyDeleted);
+      return list
+        .filter((item) => !permSet.has(item.id) && !permSet.has(item.referenceNo))
+        .map((item) => ({
+          ...item,
+          deletedAt:
+            item.deletedAt !== undefined
+              ? item.deletedAt
+              : reg.softDeleted[item.id] || reg.softDeleted[item.referenceNo] || null,
+        }));
     } catch {
       return SEED_INQUIRIES;
     }
@@ -234,6 +337,8 @@ export class PortalStorage {
     inquiry: Omit<CustomerInquiry, 'id' | 'referenceNo' | 'status' | 'internalNotes' | 'createdAt'> & {
       id?: string;
       referenceNo?: string;
+      status?: LeadStatus;
+      internalNotes?: string;
     }
   ): CustomerInquiry {
     const inquiries = this.getInquiries();
@@ -241,12 +346,13 @@ export class PortalStorage {
       ...inquiry,
       id: inquiry.id || 'inq-' + Date.now(),
       referenceNo: inquiry.referenceNo || generateInquiryRef(),
-      status: 'new',
-      internalNotes: '',
+      status: inquiry.status || 'new',
+      internalNotes: inquiry.internalNotes || '',
+      deletedAt: null,
       createdAt: new Date().toISOString()
     };
     inquiries.unshift(newInquiry);
-    localStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(inquiries));
+    safeStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(inquiries));
     return newInquiry;
   }
 
@@ -255,18 +361,44 @@ export class PortalStorage {
     const index = inquiries.findIndex(i => i.id === id || i.referenceNo === id);
     if (index === -1) return null;
     inquiries[index] = { ...inquiries[index], ...updates };
-    localStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(inquiries));
+    safeStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(inquiries));
     return inquiries[index];
+  }
+
+  static removeInquiriesPermanently(ids: string[]): string[] {
+    const idSet = new Set(ids);
+    const list = this.getInquiries();
+    const removedKeys: string[] = [];
+    const remaining = list.filter((item) => {
+      if (idSet.has(item.id) || idSet.has(item.referenceNo)) {
+        removedKeys.push(item.id, item.referenceNo);
+        return false;
+      }
+      return true;
+    });
+    safeStorage.setItem(STORAGE_KEYS.INQUIRIES, JSON.stringify(remaining));
+    this.markPermanentlyDeleted([...ids, ...removedKeys]);
+    return removedKeys;
   }
 
   static getCallbacks(): CallbackRequest[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.CALLBACKS);
+      const data = safeStorage.getItem(STORAGE_KEYS.CALLBACKS);
+      const list: CallbackRequest[] = data ? JSON.parse(data) : SEED_CALLBACKS;
       if (!data) {
-        localStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(SEED_CALLBACKS));
-        return SEED_CALLBACKS;
+        safeStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(SEED_CALLBACKS));
       }
-      return JSON.parse(data);
+      const reg = this.getDeletionRegistry();
+      const permSet = new Set(reg.permanentlyDeleted);
+      return list
+        .filter((item) => !permSet.has(item.id) && !permSet.has(item.referenceNo))
+        .map((item) => ({
+          ...item,
+          deletedAt:
+            item.deletedAt !== undefined
+              ? item.deletedAt
+              : reg.softDeleted[item.id] || reg.softDeleted[item.referenceNo] || null,
+        }));
     } catch {
       return SEED_CALLBACKS;
     }
@@ -284,10 +416,11 @@ export class PortalStorage {
       id: cb.id || 'cb-' + Date.now(),
       referenceNo: cb.referenceNo || 'BBE-CB-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000),
       status: 'pending',
+      deletedAt: null,
       createdAt: new Date().toISOString()
     };
     list.unshift(newCb);
-    localStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(list));
+    safeStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(list));
     return newCb;
   }
 
@@ -296,18 +429,44 @@ export class PortalStorage {
     const idx = list.findIndex(c => c.id === id || c.referenceNo === id);
     if (idx === -1) return null;
     list[idx] = { ...list[idx], ...updates };
-    localStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(list));
+    safeStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(list));
     return list[idx];
+  }
+
+  static removeCallbacksPermanently(ids: string[]): string[] {
+    const idSet = new Set(ids);
+    const list = this.getCallbacks();
+    const removedKeys: string[] = [];
+    const remaining = list.filter((item) => {
+      if (idSet.has(item.id) || idSet.has(item.referenceNo)) {
+        removedKeys.push(item.id, item.referenceNo);
+        return false;
+      }
+      return true;
+    });
+    safeStorage.setItem(STORAGE_KEYS.CALLBACKS, JSON.stringify(remaining));
+    this.markPermanentlyDeleted([...ids, ...removedKeys]);
+    return removedKeys;
   }
 
   static getQuotations(): QuotationRecord[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.QUOTATIONS);
+      const data = safeStorage.getItem(STORAGE_KEYS.QUOTATIONS);
+      const list: QuotationRecord[] = data ? JSON.parse(data) : SEED_QUOTATIONS;
       if (!data) {
-        localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(SEED_QUOTATIONS));
-        return SEED_QUOTATIONS;
+        safeStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(SEED_QUOTATIONS));
       }
-      return JSON.parse(data);
+      const reg = this.getDeletionRegistry();
+      const permSet = new Set(reg.permanentlyDeleted);
+      return list
+        .filter((item) => !permSet.has(item.id) && !permSet.has(item.quotationNo))
+        .map((item) => ({
+          ...item,
+          deletedAt:
+            item.deletedAt !== undefined
+              ? item.deletedAt
+              : reg.softDeleted[item.id] || reg.softDeleted[item.quotationNo] || null,
+        }));
     } catch {
       return SEED_QUOTATIONS;
     }
@@ -320,20 +479,46 @@ export class PortalStorage {
       ...data,
       id: 'qt-' + Date.now(),
       quotationNo: generateQuotationNumber(list.length + 1),
+      deletedAt: null,
       ...totals
     };
     list.unshift(newQuot);
-    localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(list));
+    safeStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(list));
     return newQuot;
   }
 
-  static updateQuotationStatus(id: string, status: QuotationStatus): QuotationRecord | null {
+  static updateQuotation(id: string, updates: Partial<QuotationRecord>): QuotationRecord | null {
     const list = this.getQuotations();
-    const idx = list.findIndex(q => q.id === id);
+    const idx = list.findIndex(q => q.id === id || q.quotationNo === id);
     if (idx === -1) return null;
-    list[idx].status = status;
-    localStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(list));
+    const merged = { ...list[idx], ...updates };
+    if (updates.items) {
+      const totals = calculateQuotationTotals(updates.items);
+      Object.assign(merged, totals);
+    }
+    list[idx] = merged;
+    safeStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(list));
     return list[idx];
+  }
+
+  static updateQuotationStatus(id: string, status: QuotationStatus): QuotationRecord | null {
+    return this.updateQuotation(id, { status });
+  }
+
+  static removeQuotationsPermanently(ids: string[]): string[] {
+    const idSet = new Set(ids);
+    const list = this.getQuotations();
+    const removedKeys: string[] = [];
+    const remaining = list.filter((item) => {
+      if (idSet.has(item.id) || idSet.has(item.quotationNo)) {
+        removedKeys.push(item.id, item.quotationNo);
+        return false;
+      }
+      return true;
+    });
+    safeStorage.setItem(STORAGE_KEYS.QUOTATIONS, JSON.stringify(remaining));
+    this.markPermanentlyDeleted([...ids, ...removedKeys]);
+    return removedKeys;
   }
 
   static getSettings(): BusinessSettings {

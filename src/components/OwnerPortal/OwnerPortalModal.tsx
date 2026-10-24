@@ -6,29 +6,25 @@ import {
   PhoneCall,
   FileSpreadsheet,
   Settings,
-  BarChart3,
   LogOut,
   Search,
-  Filter,
   Download,
   Plus,
   Trash2,
   Printer,
   CheckCircle,
-  Clock,
   Phone,
   MessageSquare,
   Edit3,
-  Calendar,
   Save,
-  ShieldCheck,
   AlertCircle,
-  Database,
   RefreshCw,
-  Copy,
-  ExternalLink,
   ClipboardCheck,
-  Check
+  RotateCcw,
+  Eye,
+  CheckSquare,
+  Square,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   PortalStorage,
@@ -38,10 +34,11 @@ import {
   BusinessSettings,
   LeadStatus,
   CallbackStatus,
-  QuotationStatus
+  QuotationStatus,
+  PortalEntityType,
 } from '../../data/portalStore.ts';
 import { SupabaseService, BookingRecord } from '../../services/supabaseService.ts';
-import { COMPANY_DETAILS, SERVICES_DATA } from '../../data/companyData.ts';
+import { COMPANY_DETAILS } from '../../data/companyData.ts';
 import {
   formatINR,
   QuotationLineItem,
@@ -59,14 +56,29 @@ interface OwnerPortalModalProps {
   onLogout: () => void;
 }
 
+type PortalTab =
+  | 'overview'
+  | 'leads'
+  | 'callbacks'
+  | 'bookings'
+  | 'quotations'
+  | 'trash'
+  | 'settings';
+
+interface ConfirmDialogState {
+  isOpen: boolean;
+  mode: 'trash' | 'permanent' | 'empty_trash';
+  entityType?: PortalEntityType;
+  ids: string[];
+  label: string;
+}
+
 export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
   isOpen,
   onClose,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<
-    'overview' | 'leads' | 'callbacks' | 'bookings' | 'quotations' | 'reports' | 'settings'
-  >('overview');
+  const [activeTab, setActiveTab] = useState<PortalTab>('overview');
 
   // Store data
   const [inquiries, setInquiries] = useState<CustomerInquiry[]>([]);
@@ -76,27 +88,65 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
   const [settings, setSettings] = useState<BusinessSettings>(COMPANY_DETAILS as any);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Leads Filter & Search
+  // Operation Feedback Banner (shown only after operation completes)
+  const [feedbackBanner, setFeedbackBanner] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+
+  // Filters & Search
   const [leadSearch, setLeadSearch] = useState('');
   const [leadStatusFilter, setLeadStatusFilter] = useState<'all' | LeadStatus>('all');
-  const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
-  const [tempNotes, setTempNotes] = useState('');
-
-  // Bookings Filter
+  const [callbackSearch, setCallbackSearch] = useState('');
+  const [callbackStatusFilter, setCallbackStatusFilter] = useState<'all' | CallbackStatus>('all');
   const [bookingSearch, setBookingSearch] = useState('');
   const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('all');
+  const [quoteSearch, setQuoteSearch] = useState('');
+  const [trashSearch, setTrashSearch] = useState('');
+  const [trashTypeFilter, setTrashTypeFilter] = useState<'all' | PortalEntityType>('all');
+
+  // Multi-select Checkboxes State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedTrashItems, setSelectedTrashItems] = useState<
+    Array<{ entityType: PortalEntityType; id: string }>
+  >([]);
+
+  // View Record Modal State
+  const [viewingRecord, setViewingRecord] = useState<{
+    entityType: PortalEntityType;
+    data: any;
+  } | null>(null);
+
+  // Edit Record Modal State
+  const [editingRecord, setEditingRecord] = useState<{
+    entityType: PortalEntityType;
+    data: any;
+  } | null>(null);
 
   // Printable Quotation Modal State
   const [viewingQuote, setViewingQuote] = useState<QuotationRecord | null>(null);
 
-  // New Quotation Form Modal State
+  // Delete Confirmation Modal State
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState>({
+    isOpen: false,
+    mode: 'trash',
+    ids: [],
+    label: '',
+  });
+  const [permanentConfirmChecked, setPermanentConfirmChecked] = useState(false);
+  const [isProcessingDelete, setIsProcessingDelete] = useState(false);
+
+  // New / Edit Quotation Form Modal State
   const [isCreatingQuote, setIsCreatingQuote] = useState(false);
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   const [newQuoteClient, setNewQuoteClient] = useState('');
   const [newQuoteCompany, setNewQuoteCompany] = useState('');
   const [newQuotePhone, setNewQuotePhone] = useState('');
   const [newQuoteEmail, setNewQuoteEmail] = useState('');
   const [newQuoteGstin, setNewQuoteGstin] = useState('');
   const [newQuoteAddress, setNewQuoteAddress] = useState('');
+  const [newQuoteStatus, setNewQuoteStatus] = useState<QuotationStatus>('sent');
+  const [serviceFilterQuery, setServiceFilterQuery] = useState('');
   const [newQuoteItems, setNewQuoteItems] = useState<QuotationLineItem[]>([
     {
       id: '1',
@@ -105,20 +155,30 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
       unit: QUOTATION_SERVICE_PRESETS[0].defaultUnit,
       quantity: 1,
       unitRate: QUOTATION_SERVICE_PRESETS[0].defaultRate,
-    }
+    },
   ]);
   const [newQuoteTerms, setNewQuoteTerms] = useState(
     '1. Water and power connections to be provided at site by client.\n2. Payment: 50% advance along with work order, balance upon completion.\n3. Safe vehicle access to sumps to be facilitated by client.\n4. Validity: 30 days.'
   );
 
-  // Settings Feedback
-  const [settingsSaved, setSettingsSaved] = useState(false);
+  const showFeedback = (type: 'success' | 'error', message: string) => {
+    setFeedbackBanner({ type, message });
+    setTimeout(() => {
+      setFeedbackBanner((prev) => (prev?.message === message ? null : prev));
+    }, 4000);
+  };
 
   useEffect(() => {
     if (isOpen) {
       loadData();
     }
   }, [isOpen]);
+
+  // Clear selections when switching tabs
+  useEffect(() => {
+    setSelectedIds([]);
+    setSelectedTrashItems([]);
+  }, [activeTab]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -141,41 +201,393 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Lead Status Change Handler
+  // Separate Active Records from Trashed Records
+  const activeInquiries = inquiries.filter((i) => !i.deletedAt);
+  const trashedInquiries = inquiries.filter((i) => Boolean(i.deletedAt));
+
+  const activeCallbacks = callbacks.filter((c) => !c.deletedAt);
+  const trashedCallbacks = callbacks.filter((c) => Boolean(c.deletedAt));
+
+  const activeBookings = bookings.filter((b) => !b.deletedAt);
+  const trashedBookings = bookings.filter((b) => Boolean(b.deletedAt));
+
+  const activeQuotations = quotations.filter((q) => !q.deletedAt);
+  const trashedQuotations = quotations.filter((q) => Boolean(q.deletedAt));
+
+  const totalTrashCount =
+    trashedInquiries.length +
+    trashedCallbacks.length +
+    trashedBookings.length +
+    trashedQuotations.length;
+
+  // Filtered Active Lists
+  const filteredLeads = activeInquiries.filter((i) => {
+    const matchStatus = leadStatusFilter === 'all' || i.status === leadStatusFilter;
+    const q = leadSearch.toLowerCase();
+    const matchSearch =
+      !q ||
+      i.customerName.toLowerCase().includes(q) ||
+      i.companyName.toLowerCase().includes(q) ||
+      i.mobileNumber.includes(q) ||
+      i.referenceNo.toLowerCase().includes(q) ||
+      i.serviceRequired.toLowerCase().includes(q);
+    return matchStatus && matchSearch;
+  });
+
+  const filteredCallbacks = activeCallbacks.filter((c) => {
+    const matchStatus = callbackStatusFilter === 'all' || c.status === callbackStatusFilter;
+    const q = callbackSearch.toLowerCase();
+    const matchSearch =
+      !q ||
+      c.customerName.toLowerCase().includes(q) ||
+      c.companyName.toLowerCase().includes(q) ||
+      c.mobileNumber.includes(q) ||
+      c.referenceNo.toLowerCase().includes(q);
+    return matchStatus && matchSearch;
+  });
+
+  const filteredBookings = activeBookings.filter((b) => {
+    const matchStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
+    const q = bookingSearch.toLowerCase();
+    const matchSearch =
+      !q ||
+      b.customerName.toLowerCase().includes(q) ||
+      b.companyName.toLowerCase().includes(q) ||
+      b.phone.includes(q) ||
+      b.bookingReference.toLowerCase().includes(q) ||
+      b.requestedService.toLowerCase().includes(q) ||
+      b.siteAddress.toLowerCase().includes(q);
+    return matchStatus && matchSearch;
+  });
+
+  const filteredQuotations = activeQuotations.filter((qt) => {
+    const q = quoteSearch.toLowerCase();
+    return (
+      !q ||
+      qt.quotationNo.toLowerCase().includes(q) ||
+      qt.clientName.toLowerCase().includes(q) ||
+      qt.companyName.toLowerCase().includes(q) ||
+      qt.clientPhone.includes(q)
+    );
+  });
+
+  // Combined Trashed Items for Trash Tab
+  const allTrashRecords = [
+    ...trashedInquiries.map((i) => ({
+      entityType: 'enquiries' as PortalEntityType,
+      typeLabel: 'Enquiry',
+      id: i.id,
+      ref: i.referenceNo,
+      name: i.customerName,
+      company: i.companyName,
+      phone: i.mobileNumber,
+      detail: i.serviceRequired,
+      deletedAt: i.deletedAt!,
+      raw: i,
+    })),
+    ...trashedCallbacks.map((c) => ({
+      entityType: 'callbacks' as PortalEntityType,
+      typeLabel: 'Callback',
+      id: c.id,
+      ref: c.referenceNo,
+      name: c.customerName,
+      company: c.companyName,
+      phone: c.mobileNumber,
+      detail: `${c.preferredDate} ${c.preferredTime}`,
+      deletedAt: c.deletedAt!,
+      raw: c,
+    })),
+    ...trashedBookings.map((b) => ({
+      entityType: 'bookings' as PortalEntityType,
+      typeLabel: 'Booking',
+      id: b.id,
+      ref: b.bookingReference,
+      name: b.customerName,
+      company: b.companyName,
+      phone: b.phone,
+      detail: b.requestedService,
+      deletedAt: b.deletedAt!,
+      raw: b,
+    })),
+    ...trashedQuotations.map((q) => ({
+      entityType: 'quotations' as PortalEntityType,
+      typeLabel: 'Quotation',
+      id: q.id,
+      ref: q.quotationNo,
+      name: q.clientName,
+      company: q.companyName,
+      phone: q.clientPhone,
+      detail: formatINR(q.grandTotal),
+      deletedAt: q.deletedAt!,
+      raw: q,
+    })),
+  ].filter((item) => {
+    const matchType = trashTypeFilter === 'all' || item.entityType === trashTypeFilter;
+    const q = trashSearch.toLowerCase();
+    const matchSearch =
+      !q ||
+      item.ref.toLowerCase().includes(q) ||
+      item.name.toLowerCase().includes(q) ||
+      item.company.toLowerCase().includes(q) ||
+      item.phone.includes(q) ||
+      item.detail.toLowerCase().includes(q);
+    return matchType && matchSearch;
+  });
+
+  // Selection Helpers
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = (ids: string[]) => {
+    setSelectedIds(ids);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  // Trash Selection Helpers
+  const isTrashItemSelected = (entityType: PortalEntityType, id: string) =>
+    selectedTrashItems.some((t) => t.entityType === entityType && t.id === id);
+
+  const toggleSelectTrashItem = (entityType: PortalEntityType, id: string) => {
+    setSelectedTrashItems((prev) =>
+      prev.some((t) => t.entityType === entityType && t.id === id)
+        ? prev.filter((t) => !(t.entityType === entityType && t.id === id))
+        : [...prev, { entityType, id }]
+    );
+  };
+
+  // Delete & Restore Action Triggers
+  const requestMoveToTrash = (entityType: PortalEntityType, ids: string[], label: string) => {
+    if (ids.length === 0) return;
+    setPermanentConfirmChecked(false);
+    setConfirmDialog({
+      isOpen: true,
+      mode: 'trash',
+      entityType,
+      ids,
+      label,
+    });
+  };
+
+  const requestPermanentDelete = (entityType: PortalEntityType, ids: string[], label: string) => {
+    if (ids.length === 0) return;
+    setPermanentConfirmChecked(false);
+    setConfirmDialog({
+      isOpen: true,
+      mode: 'permanent',
+      entityType,
+      ids,
+      label,
+    });
+  };
+
+  const requestEmptyTrash = () => {
+    if (totalTrashCount === 0) return;
+    setPermanentConfirmChecked(false);
+    setConfirmDialog({
+      isOpen: true,
+      mode: 'empty_trash',
+      ids: [],
+      label: `all ${totalTrashCount} trashed record(s)`,
+    });
+  };
+
+  const executeConfirmedDelete = async () => {
+    setIsProcessingDelete(true);
+    try {
+      if (confirmDialog.mode === 'trash' && confirmDialog.entityType) {
+        const res = await SupabaseService.moveToTrash(confirmDialog.entityType, confirmDialog.ids);
+        await loadData();
+        setSelectedIds([]);
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        if (res.success) {
+          showFeedback('success', `Moved ${res.count} record(s) to Trash.`);
+        } else {
+          showFeedback('error', res.error || 'Failed to move records to Trash.');
+        }
+      } else if (confirmDialog.mode === 'permanent') {
+        if (confirmDialog.entityType) {
+          const res = await SupabaseService.deletePermanently(
+            confirmDialog.entityType,
+            confirmDialog.ids
+          );
+          await loadData();
+          setSelectedIds([]);
+          setSelectedTrashItems([]);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          if (res.success) {
+            showFeedback('success', `Permanently deleted ${res.count} record(s).`);
+          } else {
+            showFeedback('error', res.error || 'Failed to delete records permanently.');
+          }
+        } else if (selectedTrashItems.length > 0) {
+          // Bulk permanent delete across trash types
+          const grouped: Record<PortalEntityType, string[]> = {
+            enquiries: [],
+            callbacks: [],
+            bookings: [],
+            quotations: [],
+          };
+          for (const item of selectedTrashItems) {
+            grouped[item.entityType].push(item.id);
+          }
+          let totalDeleted = 0;
+          for (const type of Object.keys(grouped) as PortalEntityType[]) {
+            if (grouped[type].length > 0) {
+              const r = await SupabaseService.deletePermanently(type, grouped[type]);
+              if (r.success) totalDeleted += r.count;
+            }
+          }
+          await loadData();
+          setSelectedTrashItems([]);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          showFeedback('success', `Permanently deleted ${totalDeleted} record(s).`);
+        }
+      } else if (confirmDialog.mode === 'empty_trash') {
+        const res = await SupabaseService.emptyTrash();
+        await loadData();
+        setSelectedTrashItems([]);
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        if (res.success) {
+          showFeedback('success', `Emptied Trash (${res.count} record(s) removed permanently).`);
+        } else {
+          showFeedback('error', res.error || 'Failed to empty Trash.');
+        }
+      }
+    } finally {
+      setIsProcessingDelete(false);
+    }
+  };
+
+  const handleRestoreRecords = async (entityType: PortalEntityType, ids: string[]) => {
+    const res = await SupabaseService.restoreFromTrash(entityType, ids);
+    await loadData();
+    setSelectedTrashItems((prev) =>
+      prev.filter((t) => !(t.entityType === entityType && ids.includes(t.id)))
+    );
+    if (res.success) {
+      showFeedback('success', `Restored ${res.count} record(s) from Trash.`);
+    } else {
+      showFeedback('error', res.error || 'Failed to restore records.');
+    }
+  };
+
+  const handleBulkRestoreTrash = async () => {
+    if (selectedTrashItems.length === 0) return;
+    const grouped: Record<PortalEntityType, string[]> = {
+      enquiries: [],
+      callbacks: [],
+      bookings: [],
+      quotations: [],
+    };
+    for (const item of selectedTrashItems) {
+      grouped[item.entityType].push(item.id);
+    }
+    let totalRestored = 0;
+    for (const type of Object.keys(grouped) as PortalEntityType[]) {
+      if (grouped[type].length > 0) {
+        const r = await SupabaseService.restoreFromTrash(type, grouped[type]);
+        if (r.success) totalRestored += r.count;
+      }
+    }
+    await loadData();
+    setSelectedTrashItems([]);
+    showFeedback('success', `Restored ${totalRestored} record(s) from Trash.`);
+  };
+
+  // Status Change Handlers
   const handleStatusChange = async (id: string, newStatus: LeadStatus) => {
-    await SupabaseService.updateEnquiry(id, { status: newStatus });
-    loadData();
+    const ok = await SupabaseService.updateEnquiry(id, { status: newStatus });
+    await loadData();
+    if (ok) showFeedback('success', 'Enquiry status updated.');
   };
 
-  // Internal Notes Save Handler
-  const handleSaveNotes = async (id: string) => {
-    await SupabaseService.updateEnquiry(id, { internalNotes: tempNotes });
-    setEditingNotesId(null);
-    loadData();
-  };
-
-  // Follow-up Date Handler
-  const handleDateChange = async (id: string, date: string) => {
-    await SupabaseService.updateEnquiry(id, { followUpDate: date });
-    loadData();
-  };
-
-  // Callback Status Change Handler
   const handleCallbackStatus = async (id: string, newStatus: CallbackStatus) => {
-    await SupabaseService.updateCallback(id, { status: newStatus });
-    loadData();
+    const ok = await SupabaseService.updateCallback(id, { status: newStatus });
+    await loadData();
+    if (ok) showFeedback('success', 'Callback status updated.');
   };
 
-  // Booking Status Handler
   const handleBookingStatus = async (id: string, newStatus: BookingRecord['status']) => {
-    await SupabaseService.updateBookingStatus(id, newStatus);
-    loadData();
+    const ok = await SupabaseService.updateBookingStatus(id, newStatus);
+    await loadData();
+    if (ok) showFeedback('success', 'Booking status updated.');
+  };
+
+  // Save Edited Record Modal Handler
+  const handleSaveEditedRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRecord) return;
+    const { entityType, data } = editingRecord;
+    let ok = false;
+
+    if (entityType === 'enquiries') {
+      ok = await SupabaseService.updateEnquiry(data.id, {
+        customerName: data.customerName,
+        companyName: data.companyName,
+        mobileNumber: sanitizeTenDigitMobile(data.mobileNumber),
+        email: data.email,
+        serviceRequired: data.serviceRequired,
+        siteLocation: data.siteLocation,
+        workDescription: data.workDescription,
+        status: data.status,
+        internalNotes: data.internalNotes,
+        followUpDate: data.followUpDate,
+      });
+    } else if (entityType === 'callbacks') {
+      ok = await SupabaseService.updateCallback(data.id, {
+        customerName: data.customerName,
+        companyName: data.companyName,
+        mobileNumber: sanitizeTenDigitMobile(data.mobileNumber),
+        preferredDate: data.preferredDate,
+        preferredTime: data.preferredTime,
+        status: data.status,
+        notes: data.notes,
+      });
+    } else if (entityType === 'bookings') {
+      ok = await SupabaseService.updateBooking(data.id, {
+        customerName: data.customerName,
+        companyName: data.companyName,
+        phone: sanitizeTenDigitMobile(data.phone),
+        email: data.email,
+        requestedService: data.requestedService,
+        siteAddress: data.siteAddress,
+        scheduledDate: data.scheduledDate,
+        scheduledTime: data.scheduledTime,
+        status: data.status,
+        notes: data.notes,
+      });
+    }
+
+    setEditingRecord(null);
+    await loadData();
+    if (ok) {
+      showFeedback('success', 'Record saved.');
+    } else {
+      showFeedback('error', 'Could not save changes.');
+    }
   };
 
   // Export Leads to CSV
   const handleExportCSV = () => {
-    const headers = ['Reference No', 'Date', 'Customer Name', 'Company Name', 'Mobile Number', 'Email', 'Service Required', 'Site Location', 'Status', 'Internal Notes'];
-    const rows = inquiries.map(i => [
+    const headers = [
+      'Reference No',
+      'Date',
+      'Customer Name',
+      'Company Name',
+      'Mobile Number',
+      'Email',
+      'Service',
+      'Site Location',
+      'Status',
+      'Notes',
+    ];
+    const rows = activeInquiries.map((i) => [
       `"${i.referenceNo}"`,
       `"${new Date(i.createdAt).toLocaleDateString()}"`,
       `"${i.customerName}"`,
@@ -185,10 +597,12 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
       `"${i.serviceRequired}"`,
       `"${i.siteLocation}"`,
       `"${i.status}"`,
-      `"${(i.internalNotes || '').replace(/"/g, '""')}"`
+      `"${(i.internalNotes || '').replace(/"/g, '""')}"`,
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -198,15 +612,87 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     document.body.removeChild(link);
   };
 
-  // Create Quotation Handler
+  // Open New Quotation Modal
+  const openNewQuotationModal = () => {
+    setEditingQuoteId(null);
+    setNewQuoteClient('');
+    setNewQuoteCompany('');
+    setNewQuotePhone('');
+    setNewQuoteEmail('');
+    setNewQuoteGstin('');
+    setNewQuoteAddress('');
+    setNewQuoteStatus('sent');
+    setServiceFilterQuery('');
+    setNewQuoteItems([
+      {
+        id: '1',
+        serviceOption: QUOTATION_SERVICE_PRESETS[0].title,
+        description: QUOTATION_SERVICE_PRESETS[0].defaultDescription,
+        unit: QUOTATION_SERVICE_PRESETS[0].defaultUnit,
+        quantity: 1,
+        unitRate: QUOTATION_SERVICE_PRESETS[0].defaultRate,
+      },
+    ]);
+    setIsCreatingQuote(true);
+  };
+
+  // Open Edit Quotation Modal
+  const openEditQuotationModal = (q: QuotationRecord) => {
+    setEditingQuoteId(q.id);
+    setNewQuoteClient(q.clientName);
+    setNewQuoteCompany(q.companyName);
+    setNewQuotePhone(sanitizeTenDigitMobile(cleanPhoneNumber(q.clientPhone)));
+    setNewQuoteEmail(q.clientEmail);
+    setNewQuoteGstin(q.clientGstin);
+    setNewQuoteAddress(q.clientAddress);
+    setNewQuoteStatus(q.status);
+    setServiceFilterQuery('');
+    setNewQuoteItems(
+      q.items.length > 0
+        ? q.items.map((item) => ({ ...item }))
+        : [
+            {
+              id: '1',
+              serviceOption: QUOTATION_SERVICE_PRESETS[0].title,
+              description: QUOTATION_SERVICE_PRESETS[0].defaultDescription,
+              unit: QUOTATION_SERVICE_PRESETS[0].defaultUnit,
+              quantity: 1,
+              unitRate: QUOTATION_SERVICE_PRESETS[0].defaultRate,
+            },
+          ]
+    );
+    setNewQuoteTerms((q.terms || []).join('\n'));
+    setIsCreatingQuote(true);
+  };
+
+  // Save New or Edited Quotation
   const handleSaveNewQuotation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newQuoteClient.trim() || !newQuoteCompany.trim()) return;
 
     const termsArray = newQuoteTerms
       .split('\n')
-      .map(t => t.trim())
-      .filter(t => t.length > 0);
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
+
+    if (editingQuoteId) {
+      const ok = await SupabaseService.updateQuotation(editingQuoteId, {
+        clientName: newQuoteClient.trim(),
+        companyName: newQuoteCompany.trim(),
+        clientPhone: sanitizeTenDigitMobile(newQuotePhone),
+        clientEmail: newQuoteEmail.trim(),
+        clientGstin: newQuoteGstin.trim(),
+        clientAddress: newQuoteAddress.trim(),
+        status: newQuoteStatus,
+        items: newQuoteItems,
+        terms: termsArray,
+      });
+      setIsCreatingQuote(false);
+      setEditingQuoteId(null);
+      await loadData();
+      if (ok) showFeedback('success', 'Quotation updated.');
+      return;
+    }
 
     const result = await SupabaseService.saveQuotation({
       clientName: newQuoteClient.trim(),
@@ -217,19 +703,21 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
       clientAddress: newQuoteAddress.trim(),
       date: new Date().toISOString().split('T')[0],
       validityDays: 30,
-      status: 'sent',
+      status: newQuoteStatus,
       items: newQuoteItems,
-      terms: termsArray
+      terms: termsArray,
     });
 
     setIsCreatingQuote(false);
-    loadData();
+    await loadData();
+    showFeedback('success', `Quotation ${result.quotation.quotationNo} saved.`);
     setViewingQuote(result.quotation);
   };
 
-  // Add Listed Service Item to Quotation Form
+  // Quotation Line Item Helpers
   const handleAddQuoteItem = () => {
-    const nextPreset = QUOTATION_SERVICE_PRESETS[newQuoteItems.length % QUOTATION_SERVICE_PRESETS.length];
+    const nextPreset =
+      QUOTATION_SERVICE_PRESETS[newQuoteItems.length % QUOTATION_SERVICE_PRESETS.length];
     setNewQuoteItems([
       ...newQuoteItems,
       {
@@ -239,11 +727,10 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
         unit: nextPreset.defaultUnit,
         quantity: 1,
         unitRate: nextPreset.defaultRate,
-      }
+      },
     ]);
   };
 
-  // Add Manual Custom Item to Quotation Form
   const handleAddManualQuoteItem = () => {
     setNewQuoteItems([
       ...newQuoteItems,
@@ -254,16 +741,18 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
         unit: 'Job',
         quantity: 1,
         unitRate: 5000,
-      }
+      },
     ]);
   };
 
-  // Handle Service Dropdown Change on Line Item
   const handleServiceOptionChange = (index: number, selectedValue: string) => {
+    if (!selectedValue) return;
     const updated = [...newQuoteItems];
     if (selectedValue === MANUAL_SERVICE_OPTION_VALUE) {
       const wasPreset = QUOTATION_SERVICE_PRESETS.some(
-        (p) => p.defaultDescription === updated[index].description || p.title === updated[index].description
+        (p) =>
+          p.defaultDescription === updated[index].description ||
+          p.title === updated[index].description
       );
       updated[index] = {
         ...updated[index],
@@ -296,23 +785,26 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
     setNewQuoteItems(newQuoteItems.filter((_, i) => i !== index));
   };
 
-  // Open Create Quote from an existing Inquiry
+  // Open Create Quote from Inquiry
   const handleQuoteFromInquiry = (inquiry: CustomerInquiry) => {
+    setEditingQuoteId(null);
     setNewQuoteClient(inquiry.customerName);
     setNewQuoteCompany(inquiry.companyName);
     setNewQuotePhone(sanitizeTenDigitMobile(cleanPhoneNumber(inquiry.mobileNumber)));
-    setNewQuoteEmail(inquiry.email);
-    setNewQuoteAddress(inquiry.siteLocation);
-    const matchedPreset = QUOTATION_SERVICE_PRESETS.find((p) => p.title === inquiry.serviceRequired);
+    setNewQuoteEmail(inquiry.email === 'Not specified' ? '' : inquiry.email);
+    setNewQuoteAddress(inquiry.siteLocation === 'Not specified' ? '' : inquiry.siteLocation);
+    const matchedPreset = QUOTATION_SERVICE_PRESETS.find(
+      (p) => p.title === inquiry.serviceRequired
+    );
     setNewQuoteItems([
       {
         id: '1',
         serviceOption: matchedPreset ? matchedPreset.title : MANUAL_SERVICE_OPTION_VALUE,
-        description: `${inquiry.serviceRequired}: ${inquiry.workDescription}`,
-        unit: matchedPreset ? matchedPreset.defaultUnit : 'Lump Sum',
+        description: matchedPreset ? matchedPreset.title : inquiry.serviceRequired,
+        unit: matchedPreset ? matchedPreset.defaultUnit : 'Job',
         quantity: 1,
-        unitRate: matchedPreset ? matchedPreset.defaultRate : 15000
-      }
+        unitRate: matchedPreset ? matchedPreset.defaultRate : 12000,
+      },
     ]);
     setActiveTab('quotations');
     setIsCreatingQuote(true);
@@ -322,527 +814,590 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     PortalStorage.saveSettings(settings);
-    setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 3000);
+    showFeedback('success', 'Settings saved.');
   };
 
-  // Filtered Leads
-  const filteredLeads = inquiries.filter(i => {
-    const matchStatus = leadStatusFilter === 'all' || i.status === leadStatusFilter;
-    const query = leadSearch.toLowerCase();
-    const matchSearch =
-      i.customerName.toLowerCase().includes(query) ||
-      i.companyName.toLowerCase().includes(query) ||
-      i.mobileNumber.includes(query) ||
-      i.referenceNo.toLowerCase().includes(query) ||
-      i.serviceRequired.toLowerCase().includes(query);
-    return matchStatus && matchSearch;
-  });
+  // Overview Stats (Active only)
+  const totalInquiries = activeInquiries.length;
+  const newLeads = activeInquiries.filter((i) => i.status === 'new').length;
+  const pendingCallbacks = activeCallbacks.filter((c) => c.status === 'pending').length;
+  const totalBookings = activeBookings.length;
+  const pendingBookings = activeBookings.filter((b) => b.status === 'Pending').length;
+  const totalQuotes = activeQuotations.length;
+  const pipelineValue = activeQuotations.reduce((acc, q) => acc + q.grandTotal, 0);
 
-  // Filtered Bookings
-  const filteredBookings = bookings.filter(b => {
-    const matchStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
-    const query = bookingSearch.toLowerCase();
-    const matchSearch =
-      b.customerName.toLowerCase().includes(query) ||
-      b.companyName.toLowerCase().includes(query) ||
-      b.phone.includes(query) ||
-      b.bookingReference.toLowerCase().includes(query) ||
-      b.requestedService.toLowerCase().includes(query) ||
-      b.siteAddress.toLowerCase().includes(query);
-    return matchStatus && matchSearch;
-  });
+  // Filtered service presets for searchable dropdown
+  const visibleServicePresets = QUOTATION_SERVICE_PRESETS.filter((p) =>
+    !serviceFilterQuery.trim()
+      ? true
+      : p.title.toLowerCase().includes(serviceFilterQuery.toLowerCase())
+  );
 
-  // Overview Stats
-  const totalInquiries = inquiries.length;
-  const newLeads = inquiries.filter(i => i.status === 'new').length;
-  const pendingCallbacks = callbacks.filter(c => c.status === 'pending').length;
-  const totalBookings = bookings.length;
-  const pendingBookings = bookings.filter(b => b.status === 'Pending').length;
-  const totalQuotes = quotations.length;
-  const pipelineValue = quotations.reduce((acc, q) => acc + q.grandTotal, 0);
+  // Reusable Selection & Bulk Action Bar
+  const renderSelectionBar = (entityType: PortalEntityType, allVisibleIds: string[]) => {
+    const allSelected =
+      allVisibleIds.length > 0 && allVisibleIds.every((id) => selectedIds.includes(id));
+
+    return (
+      <div className="bg-white px-3 py-2 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              allSelected ? handleClearSelection() : handleSelectAll(allVisibleIds)
+            }
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+          >
+            {allSelected ? (
+              <CheckSquare className="w-3.5 h-3.5 text-blue-600" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-slate-500" />
+            )}
+            <span>Select All</span>
+          </button>
+
+          {selectedIds.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium cursor-pointer"
+              >
+                Clear Selection
+              </button>
+              <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                {selectedIds.length} selected
+              </span>
+            </>
+          )}
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() =>
+                requestMoveToTrash(
+                  entityType,
+                  selectedIds,
+                  `${selectedIds.length} selected record(s)`
+                )
+              }
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-bold cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Move to Trash</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                requestPermanentDelete(
+                  entityType,
+                  selectedIds,
+                  `${selectedIds.length} selected record(s)`
+                )
+              }
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Permanently</span>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-in fade-in">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-1.5 sm:p-3 overflow-y-auto">
       <div
-        className="bg-slate-100 rounded-2xl max-w-6xl w-full border border-slate-300 shadow-2xl relative my-4 max-h-[94vh] flex flex-col overflow-hidden"
+        className="bg-slate-50 rounded-xl max-w-6xl w-full border border-slate-300 shadow-2xl relative my-2 max-h-[95vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Header Bar */}
-        <div className="bg-slate-900 text-white p-4 px-6 flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold">
+        {/* Compact Top Header Bar */}
+        <div className="bg-slate-900 text-white py-2.5 px-4 flex items-center justify-between border-b border-slate-800">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
               BBE
             </div>
-            <div>
-              <div className="font-heading font-extrabold text-base tracking-tight flex items-center gap-2">
-                <span>BLUE BIRD ENTERPRISES — Management Portal</span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-900 text-blue-300 border border-blue-700">
-                  Proprietor View
+            <div className=" truncate">
+              <div className="font-heading font-bold text-sm tracking-tight flex items-center gap-2">
+                <span className="truncate">BLUE BIRD ENTERPRISES — Management Portal</span>
+                <span className="hidden sm:inline-block text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-900 text-blue-200">
+                  Admin
                 </span>
-              </div>
-              <div className="text-xs text-slate-400">
-                Proprietor: {COMPANY_DETAILS.founder} | Turbhe MIDC, Navi Mumbai
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={loadData}
+              className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              title="Refresh"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
             <button
               onClick={() => {
                 PortalStorage.setOwnerAuthenticated(false);
                 onLogout();
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-rose-400 hover:bg-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-rose-400 text-xs font-semibold cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
+              <span className="hidden sm:inline">Sign Out</span>
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
               aria-label="Close portal modal"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Tab Navigation Navigation Strip */}
-        <div className="bg-white border-b border-slate-200 px-4 flex items-center gap-1 sm:gap-2 overflow-x-auto text-xs font-bold">
+        {/* Compact Navigation Tabs */}
+        <div className="bg-white border-b border-slate-200 px-3 flex items-center gap-1 overflow-x-auto text-xs font-bold">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'overview'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <LayoutDashboard className="w-4 h-4" />
+            <LayoutDashboard className="w-3.5 h-3.5" />
             <span>Overview</span>
           </button>
 
           <button
             onClick={() => setActiveTab('leads')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'leads'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Users className="w-4 h-4" />
-            <span>Leads & Inquiries</span>
-            {newLeads > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 text-[10px]">
-                {newLeads}
-              </span>
-            )}
+            <Users className="w-3.5 h-3.5" />
+            <span>Enquiries ({totalInquiries})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('callbacks')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'callbacks'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <PhoneCall className="w-4 h-4" />
-            <span>Callbacks</span>
-            {pendingCallbacks > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px]">
-                {pendingCallbacks}
-              </span>
-            )}
+            <PhoneCall className="w-3.5 h-3.5" />
+            <span>Callbacks ({activeCallbacks.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('bookings')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'bookings'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <ClipboardCheck className="w-4 h-4" />
-            <span>Bookings</span>
-            {pendingBookings > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px]">
-                {pendingBookings}
-              </span>
-            )}
+            <ClipboardCheck className="w-3.5 h-3.5" />
+            <span>Bookings ({totalBookings})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('quotations')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'quotations'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>Quotations & PDF</span>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Quotations ({totalQuotes})</span>
           </button>
 
           <button
-            onClick={() => setActiveTab('reports')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
-              activeTab === 'reports'
-                ? 'border-blue-600 text-blue-600'
+            onClick={() => setActiveTab('trash')}
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
+              activeTab === 'trash'
+                ? 'border-rose-600 text-rose-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <BarChart3 className="w-4 h-4" />
-            <span>Reports</span>
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Trash</span>
+            {totalTrashCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 text-[10px]">
+                {totalTrashCount}
+              </span>
+            )}
           </button>
 
           <button
             onClick={() => setActiveTab('settings')}
-            className={`py-3 px-3 sm:px-4 border-b-2 flex items-center gap-2 transition-colors cursor-pointer shrink-0 ${
+            className={`py-2.5 px-3 border-b-2 flex items-center gap-1.5 cursor-pointer shrink-0 ${
               activeTab === 'settings'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5" />
             <span>Settings</span>
           </button>
         </div>
 
-        {/* Tab Content Area */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-100">
-          
+        {/* Status Feedback Toast Banner */}
+        {feedbackBanner && (
+          <div
+            className={`px-4 py-2 text-xs font-semibold flex items-center justify-between border-b ${
+              feedbackBanner.type === 'success'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-rose-50 text-rose-800 border-rose-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {feedbackBanner.type === 'success' ? (
+                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              )}
+              <span>{feedbackBanner.message}</span>
+            </div>
+            <button
+              onClick={() => setFeedbackBanner(null)}
+              className="text-slate-500 hover:text-slate-800 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Main Content Area */}
+        <div className="p-3 sm:p-4 overflow-y-auto flex-1 space-y-3">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* Metric Cards Grid */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Total Inquiries
+            <div className="space-y-3">
+              {/* Compact Summary Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div className="bg-white p-3 rounded-lg border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500">Enquiries</div>
+                  <div className="text-xl font-extrabold text-slate-900 mt-0.5">
+                    {totalInquiries}{' '}
+                    <span className="text-xs font-semibold text-blue-600">({newLeads} new)</span>
                   </div>
-                  <div className="font-heading text-3xl font-extrabold text-slate-900">
-                    {totalInquiries}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-1">All inquiries & site requests</div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                  <div className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-1">
-                    New Leads (Action Needed)
+                <div className="bg-white p-3 rounded-lg border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500">Callbacks</div>
+                  <div className="text-xl font-extrabold text-amber-700 mt-0.5">
+                    {pendingCallbacks}{' '}
+                    <span className="text-xs font-normal text-slate-500">pending</span>
                   </div>
-                  <div className="font-heading text-3xl font-extrabold text-blue-700">
-                    {newLeads}
-                  </div>
-                  <div className="text-xs text-blue-600 mt-1">Requires supervisor response</div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                  <div className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">
-                    Scheduled Callbacks
+                <div className="bg-white p-3 rounded-lg border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500">Bookings</div>
+                  <div className="text-xl font-extrabold text-slate-900 mt-0.5">
+                    {totalBookings}{' '}
+                    <span className="text-xs font-semibold text-emerald-700">
+                      ({pendingBookings} pending)
+                    </span>
                   </div>
-                  <div className="font-heading text-3xl font-extrabold text-amber-700">
-                    {pendingCallbacks}
-                  </div>
-                  <div className="text-xs text-amber-600 mt-1">{totalBookings} total bookings logged</div>
                 </div>
 
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-                  <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider mb-1">
-                    Quoted Pipeline
-                  </div>
-                  <div className="font-heading text-2xl font-extrabold text-emerald-800">
+                <div className="bg-white p-3 rounded-lg border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500">Quotations</div>
+                  <div className="text-lg font-extrabold text-emerald-800 mt-0.5">
                     {formatINR(pipelineValue)}
                   </div>
-                  <div className="text-xs text-emerald-600 mt-1">{totalQuotes} total quotations</div>
                 </div>
               </div>
 
-              {/* Quick Action Banner */}
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h4 className="font-heading font-bold text-base text-slate-900">
-                    Issue an Official GST Quotation (18% GST Breakdown)
-                  </h4>
-                  <p className="text-xs text-slate-600">
-                    Line items, CGST (9%) + SGST (9%), professional terms, and instant printable/downloadable PDF.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setActiveTab('quotations');
-                    setIsCreatingQuote(true);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 shrink-0 cursor-pointer flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create Quotation
-                </button>
-              </div>
-
-              {/* Recent Inquiries Stream */}
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-                <div className="p-4 px-6 border-b border-slate-200 flex items-center justify-between">
-                  <h4 className="font-heading font-bold text-slate-900 text-sm">
-                    Recent Customer Inquiries
-                  </h4>
+              {/* Quick Actions Bar */}
+              <div className="bg-white p-3 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-bold text-slate-800">Quick Actions</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setActiveTab('quotations');
+                      openNewQuotationModal();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-700 cursor-pointer flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New Quotation</span>
+                  </button>
                   <button
                     onClick={() => setActiveTab('leads')}
-                    className="text-xs text-blue-600 hover:underline font-bold"
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200 cursor-pointer"
                   >
-                    View All Leads →
+                    Manage Enquiries
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('trash')}
+                    className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200 cursor-pointer flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Trash ({totalTrashCount})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Recent Enquiries List */}
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                  <span className="font-bold text-slate-800 text-xs">Recent Enquiries</span>
+                  <button
+                    onClick={() => setActiveTab('leads')}
+                    className="text-xs text-blue-600 hover:underline font-semibold cursor-pointer"
+                  >
+                    View All
                   </button>
                 </div>
                 <div className="divide-y divide-slate-100 text-xs">
-                  {inquiries.slice(0, 4).map((inq) => (
-                    <div key={inq.id} className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono font-bold text-blue-700">{inq.referenceNo}</span>
-                          <span className="text-slate-400">•</span>
+                  {activeInquiries.slice(0, 5).map((inq) => (
+                    <div
+                      key={inq.id}
+                      className="px-3 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-blue-700">
+                            {inq.referenceNo}
+                          </span>
                           <span className="font-bold text-slate-900">{inq.customerName}</span>
-                          <span className="text-slate-500">({inq.companyName})</span>
+                          <span className="text-slate-500 truncate">({inq.companyName})</span>
                         </div>
-                        <div className="text-slate-600">
-                          <strong>Service:</strong> {inq.serviceRequired} | <strong>Site:</strong> {inq.siteLocation}
+                        <div className="text-slate-600 truncate">
+                          {inq.serviceRequired} • {inq.siteLocation}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span className={`px-2.5 py-1 rounded-full font-bold uppercase text-[10px] ${
-                          inq.status === 'new' ? 'bg-blue-100 text-blue-700' :
-                          inq.status === 'contacted' ? 'bg-amber-100 text-amber-800' :
-                          inq.status === 'quotation_sent' ? 'bg-purple-100 text-purple-700' :
-                          inq.status === 'converted' ? 'bg-emerald-100 text-emerald-800' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[10px] uppercase">
                           {inq.status.replace('_', ' ')}
                         </span>
-                        <a
-                          href={`tel:${inq.mobileNumber}`}
-                          className="p-2 rounded-lg bg-slate-100 text-slate-700 hover:bg-blue-50 hover:text-blue-600"
-                          title="Call Client"
+                        <button
+                          onClick={() =>
+                            setViewingRecord({ entityType: 'enquiries', data: inq })
+                          }
+                          className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
                         >
-                          <Phone className="w-3.5 h-3.5" />
-                        </a>
+                          View
+                        </button>
+                        <button
+                          onClick={() =>
+                            setEditingRecord({ entityType: 'enquiries', data: { ...inq } })
+                          }
+                          className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold cursor-pointer"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() =>
+                            requestMoveToTrash('enquiries', [inq.id], inq.referenceNo)
+                          }
+                          className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold cursor-pointer"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   ))}
+                  {activeInquiries.length === 0 && (
+                    <div className="p-4 text-center text-slate-500">No active enquiries.</div>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: LEADS & INQUIRIES MANAGEMENT */}
+          {/* TAB 2: ENQUIRIES (LEADS) */}
           {activeTab === 'leads' && (
-            <div className="space-y-4">
-              {/* Search, Filter & Export Toolbar */}
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+            <div className="space-y-2.5">
+              {/* Compact Search & Filter Bar */}
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[240px]">
+                  <div className="relative flex-1 min-w-[180px]">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
                     <input
                       type="text"
                       value={leadSearch}
                       onChange={(e) => setLeadSearch(e.target.value)}
-                      placeholder="Search by name, company, phone, reference..."
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-blue-600 bg-slate-50"
+                      placeholder="Search enquiries..."
+                      className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50"
                     />
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <Filter className="w-3.5 h-3.5 text-slate-500" />
-                    <select
-                      value={leadStatusFilter}
-                      onChange={(e) => setLeadStatusFilter(e.target.value as any)}
-                      className="px-3 py-2 rounded-xl border border-slate-300 text-xs bg-slate-50 font-medium"
-                    >
-                      <option value="all">All Statuses ({inquiries.length})</option>
-                      <option value="new">New</option>
-                      <option value="contacted">Contacted</option>
-                      <option value="quotation_sent">Quotation Sent</option>
-                      <option value="converted">Converted</option>
-                      <option value="closed">Closed</option>
-                    </select>
-                  </div>
+                  <select
+                    value={leadStatusFilter}
+                    onChange={(e) => setLeadStatusFilter(e.target.value as any)}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-slate-50 font-medium"
+                  >
+                    <option value="all">All Status ({activeInquiries.length})</option>
+                    <option value="new">New</option>
+                    <option value="contacted">Contacted</option>
+                    <option value="quotation_sent">Quotation Sent</option>
+                    <option value="converted">Converted</option>
+                    <option value="closed">Closed</option>
+                  </select>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={loadData}
-                    className="p-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold"
-                    title="Refresh data from Supabase"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={handleExportCSV}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Export CSV</span>
-                  </button>
-                </div>
+                <button
+                  onClick={handleExportCSV}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 text-white hover:bg-slate-800 text-xs font-bold cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>CSV</span>
+                </button>
               </div>
 
-              {/* Leads Table Card */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+              {renderSelectionBar(
+                'enquiries',
+                filteredLeads.map((i) => i.id)
+              )}
+
+              {/* Compact Enquiries Table */}
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
                       <tr>
-                        <th className="py-3 px-4">Ref & Date</th>
-                        <th className="py-3 px-4">Client & Facility</th>
-                        <th className="py-3 px-4">Service & Site</th>
-                        <th className="py-3 px-4">Work Scope</th>
-                        <th className="py-3 px-4">Status</th>
-                        <th className="py-3 px-4">Follow-Up & Notes</th>
-                        <th className="py-3 px-4 text-right">Actions</th>
+                        <th className="py-2 px-3 w-8">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all enquiries"
+                            checked={
+                              filteredLeads.length > 0 &&
+                              filteredLeads.every((i) => selectedIds.includes(i.id))
+                            }
+                            onChange={(e) =>
+                              e.target.checked
+                                ? handleSelectAll(filteredLeads.map((i) => i.id))
+                                : handleClearSelection()
+                            }
+                            className="rounded border-slate-300 cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2 px-3">Ref</th>
+                        <th className="py-2 px-3">Customer</th>
+                        <th className="py-2 px-3">Service & Site</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredLeads.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="py-8 text-center text-slate-500">
-                            No inquiries match the current search or status filter.
+                          <td colSpan={6} className="py-6 text-center text-slate-500">
+                            No enquiries found.
                           </td>
                         </tr>
                       ) : (
                         filteredLeads.map((inq) => (
-                          <tr key={inq.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-3.5 px-4 align-top whitespace-nowrap">
-                              <div className="font-mono font-bold text-blue-700">{inq.referenceNo}</div>
-                              <div className="text-[10px] text-slate-400 mt-0.5">
+                          <tr
+                            key={inq.id}
+                            className={`hover:bg-slate-50 ${
+                              selectedIds.includes(inq.id) ? 'bg-blue-50/40' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 align-middle">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${inq.referenceNo}`}
+                                checked={selectedIds.includes(inq.id)}
+                                onChange={() => toggleSelectOne(inq.id)}
+                                className="rounded border-slate-300 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                              <div className="font-mono font-bold text-blue-700">
+                                {inq.referenceNo}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
                                 {new Date(inq.createdAt).toLocaleDateString()}
                               </div>
                             </td>
-
-                            <td className="py-3.5 px-4 align-top">
+                            <td className="py-2.5 px-3 align-middle">
                               <div className="font-bold text-slate-900">{inq.customerName}</div>
-                              <div className="text-slate-600 font-medium">{inq.companyName}</div>
-                              <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-1">
-                                <span>+91 {inq.mobileNumber}</span>
-                                {inq.email && inq.email !== 'Not specified' && (
-                                  <span>• {inq.email}</span>
-                                )}
+                              <div className="text-[11px] text-slate-500">
+                                {inq.companyName} • +91 {inq.mobileNumber}
                               </div>
                             </td>
-
-                            <td className="py-3.5 px-4 align-top">
-                              <div className="font-semibold text-slate-800">{inq.serviceRequired}</div>
-                              <div className="text-[11px] text-slate-500 mt-0.5">{inq.siteLocation}</div>
-                              {inq.preferredCallback && (
-                                <div className="text-[10px] text-blue-600 mt-1">
-                                  Preferred: {inq.preferredCallback}
-                                </div>
-                              )}
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-semibold text-slate-800">
+                                {inq.serviceRequired}
+                              </div>
+                              <div className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                                {inq.siteLocation}
+                              </div>
                             </td>
-
-                            <td className="py-3.5 px-4 align-top max-w-xs">
-                              <p className="text-slate-600 text-xs line-clamp-3">
-                                {inq.workDescription}
-                              </p>
-                            </td>
-
-                            <td className="py-3.5 px-4 align-top whitespace-nowrap">
+                            <td className="py-2.5 px-3 align-middle whitespace-nowrap">
                               <select
                                 value={inq.status}
-                                onChange={(e) => handleStatusChange(inq.id, e.target.value as LeadStatus)}
-                                className={`text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer ${
-                                  inq.status === 'new' ? 'bg-blue-50 border-blue-300 text-blue-800' :
-                                  inq.status === 'contacted' ? 'bg-amber-50 border-amber-300 text-amber-800' :
-                                  inq.status === 'quotation_sent' ? 'bg-purple-50 border-purple-300 text-purple-800' :
-                                  inq.status === 'converted' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' :
-                                  'bg-slate-50 border-slate-300 text-slate-700'
-                                }`}
+                                onChange={(e) =>
+                                  handleStatusChange(inq.id, e.target.value as LeadStatus)
+                                }
+                                className="text-[11px] font-semibold px-2 py-1 rounded border border-slate-300 bg-white cursor-pointer"
                               >
                                 <option value="new">New</option>
                                 <option value="contacted">Contacted</option>
-                                <option value="quotation_sent">Quotation Sent</option>
+                                <option value="quotation_sent">Quote Sent</option>
                                 <option value="converted">Converted</option>
                                 <option value="closed">Closed</option>
                               </select>
                             </td>
-
-                            <td className="py-3.5 px-4 align-top">
-                              {editingNotesId === inq.id ? (
-                                <div className="space-y-1.5">
-                                  <textarea
-                                    rows={2}
-                                    value={tempNotes}
-                                    onChange={(e) => setTempNotes(e.target.value)}
-                                    className="w-full p-1.5 border rounded-md text-[11px]"
-                                  ></textarea>
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => handleSaveNotes(inq.id)}
-                                      className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold cursor-pointer"
-                                    >
-                                      Save
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingNotesId(null)}
-                                      className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] cursor-pointer"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="space-y-1">
-                                  <p className="text-[11px] text-slate-700 italic">
-                                    {inq.internalNotes || 'No notes added yet.'}
-                                  </p>
-                                  <button
-                                    onClick={() => {
-                                      setEditingNotesId(inq.id);
-                                      setTempNotes(inq.internalNotes || '');
-                                    }}
-                                    className="text-[10px] text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <Edit3 className="w-2.5 h-2.5" />
-                                    <span>Edit Notes</span>
-                                  </button>
-                                  <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-1">
-                                    <Calendar className="w-3 h-3 text-slate-400" />
-                                    <input
-                                      type="date"
-                                      value={inq.followUpDate || ''}
-                                      onChange={(e) => handleDateChange(inq.id, e.target.value)}
-                                      className="border border-slate-200 rounded px-1 py-0.5 text-[10px]"
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-
-                            <td className="py-3.5 px-4 align-top text-right whitespace-nowrap">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <a
-                                  href={`tel:${inq.mobileNumber}`}
-                                  className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-blue-100 hover:text-blue-700"
-                                  title="Call Client"
+                            <td className="py-2.5 px-3 align-middle text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() =>
+                                    setViewingRecord({ entityType: 'enquiries', data: inq })
+                                  }
+                                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                                  title="View"
                                 >
-                                  <Phone className="w-3.5 h-3.5" />
-                                </a>
-                                <a
-                                  href={`https://wa.me/91${inq.mobileNumber}?text=${encodeURIComponent(
-                                    `Hello ${inq.customerName}, this is regarding your industrial service inquiry (${inq.referenceNo}) with Blue Bird Enterprises.`
-                                  )}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                                  title="WhatsApp Client"
+                                  View
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setEditingRecord({
+                                      entityType: 'enquiries',
+                                      data: { ...inq },
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold cursor-pointer"
+                                  title="Edit"
                                 >
-                                  <MessageSquare className="w-3.5 h-3.5" />
-                                </a>
+                                  Edit
+                                </button>
                                 <button
                                   onClick={() => handleQuoteFromInquiry(inq)}
-                                  className="px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 text-[10px] font-bold cursor-pointer"
-                                  title="Prepare Quotation"
+                                  className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold cursor-pointer"
+                                  title="Create Quote"
                                 >
                                   Quote
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestMoveToTrash('enquiries', [inq.id], inq.referenceNo)
+                                  }
+                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold cursor-pointer"
+                                  title="Move to Trash"
+                                >
+                                  Move to Trash
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestPermanentDelete('enquiries', [inq.id], inq.referenceNo)
+                                  }
+                                  className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold cursor-pointer"
+                                  title="Delete Permanently"
+                                >
+                                  Delete
                                 </button>
                               </div>
                             </td>
@@ -856,390 +1411,560 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: CALLBACKS MANAGEMENT */}
+          {/* TAB 3: CALLBACKS */}
           {activeTab === 'callbacks' && (
-            <div className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-                <div>
-                  <h4 className="font-heading font-bold text-slate-900 text-sm">
-                    Scheduled Customer Callback Requests
-                  </h4>
-                  <p className="text-xs text-slate-500">
-                    Track and close telephone consultations scheduled via web floating bar or contact form.
-                  </p>
+            <div className="space-y-2.5">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={callbackSearch}
+                    onChange={(e) => setCallbackSearch(e.target.value)}
+                    placeholder="Search callbacks..."
+                    className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50"
+                  />
                 </div>
-                <div className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
-                  {pendingCallbacks} Callbacks Pending
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {callbacks.map((cb) => (
-                  <div
-                    key={cb.id}
-                    className={`bg-white p-5 rounded-2xl border shadow-xs flex flex-col justify-between ${
-                      cb.status === 'completed'
-                        ? 'border-slate-200 bg-slate-50/50'
-                        : 'border-amber-200 ring-1 ring-amber-100'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <span className="font-mono text-xs font-bold text-blue-700 block">
-                            {cb.referenceNo}
-                          </span>
-                          <h4 className="font-bold text-slate-900 text-sm">
-                            {cb.customerName}
-                          </h4>
-                          <span className="text-xs text-slate-500">{cb.companyName}</span>
-                        </div>
-
-                        <select
-                          value={cb.status}
-                          onChange={(e) => handleCallbackStatus(cb.id, e.target.value as CallbackStatus)}
-                          className={`text-[11px] font-bold px-2 py-1 rounded-lg border cursor-pointer ${
-                            cb.status === 'pending' ? 'bg-amber-50 border-amber-300 text-amber-800' :
-                            cb.status === 'completed' ? 'bg-emerald-50 border-emerald-300 text-emerald-800' :
-                            'bg-slate-50 border-slate-300 text-slate-600'
-                          }`}
-                        >
-                          <option value="pending">Pending</option>
-                          <option value="completed">Completed</option>
-                          <option value="rescheduled">Rescheduled</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                      </div>
-
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs text-slate-700 mb-3 space-y-1">
-                        <div className="flex items-center gap-1.5 text-slate-900 font-semibold">
-                          <Clock className="w-3.5 h-3.5 text-blue-600" />
-                          <span>Target: {cb.preferredDate} at {cb.preferredTime}</span>
-                        </div>
-                        <p className="text-slate-600 text-[11px]">
-                          <strong>Subject:</strong> {cb.notes}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="font-mono font-bold text-slate-800 text-xs">
-                        +91 {cb.mobileNumber}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <a
-                          href={`tel:${cb.mobileNumber}`}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5"
-                        >
-                          <Phone className="w-3 h-3" />
-                          <span>Call Client</span>
-                        </a>
-                        <a
-                          href={`https://wa.me/91${cb.mobileNumber}?text=${encodeURIComponent(
-                            `Hello ${cb.customerName}, this is Blue Bird Enterprises following up on your scheduled callback request.`
-                          )}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 flex items-center gap-1.5"
-                        >
-                          <MessageSquare className="w-3 h-3" />
-                          <span>WhatsApp</span>
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: BOOKINGS MANAGEMENT */}
-          {activeTab === 'bookings' && (
-            <div className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3 flex-1 min-w-[280px]">
-                  <div className="relative flex-1">
-                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                    <input
-                      type="text"
-                      value={bookingSearch}
-                      onChange={(e) => setBookingSearch(e.target.value)}
-                      placeholder="Search bookings by reference, client, address, machine..."
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-blue-600 bg-slate-50"
-                    />
-                  </div>
-
-                  <select
-                    value={bookingStatusFilter}
-                    onChange={(e) => setBookingStatusFilter(e.target.value)}
-                    className="px-3 py-2 rounded-xl border border-slate-300 text-xs bg-slate-50 font-medium"
-                  >
-                    <option value="all">All Bookings ({bookings.length})</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="Rescheduled">Rescheduled</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
-                </div>
-
-                <button
-                  onClick={loadData}
-                  className="p-2 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold"
-                  title="Refresh bookings"
+                <select
+                  value={callbackStatusFilter}
+                  onChange={(e) => setCallbackStatusFilter(e.target.value as any)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-slate-50 font-medium"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
+                  <option value="all">All Status ({activeCallbacks.length})</option>
+                  <option value="pending">Pending</option>
+                  <option value="completed">Completed</option>
+                  <option value="rescheduled">Rescheduled</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredBookings.length === 0 ? (
-                  <div className="col-span-2 bg-white p-8 rounded-2xl text-center text-slate-500 text-xs">
-                    No bookings found matching filter.
-                  </div>
-                ) : (
-                  filteredBookings.map((b) => (
-                    <div
-                      key={b.id}
-                      className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-mono font-bold text-blue-700 text-xs">
-                            {b.bookingReference}
-                          </span>
-                          <select
-                            value={b.status}
-                            onChange={(e) => handleBookingStatus(b.id, e.target.value as any)}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border cursor-pointer ${
-                              b.status === 'Confirmed' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                              b.status === 'Pending' ? 'bg-amber-100 text-amber-800 border-amber-300' :
-                              b.status === 'Completed' ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                              'bg-slate-100 text-slate-700 border-slate-300'
+              {renderSelectionBar(
+                'callbacks',
+                filteredCallbacks.map((c) => c.id)
+              )}
+
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                      <tr>
+                        <th className="py-2 px-3 w-8">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all callbacks"
+                            checked={
+                              filteredCallbacks.length > 0 &&
+                              filteredCallbacks.every((c) => selectedIds.includes(c.id))
+                            }
+                            onChange={(e) =>
+                              e.target.checked
+                                ? handleSelectAll(filteredCallbacks.map((c) => c.id))
+                                : handleClearSelection()
+                            }
+                            className="rounded border-slate-300 cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2 px-3">Ref</th>
+                        <th className="py-2 px-3">Customer</th>
+                        <th className="py-2 px-3">Schedule & Notes</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredCallbacks.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-slate-500">
+                            No callbacks found.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredCallbacks.map((cb) => (
+                          <tr
+                            key={cb.id}
+                            className={`hover:bg-slate-50 ${
+                              selectedIds.includes(cb.id) ? 'bg-blue-50/40' : ''
                             }`}
                           >
-                            <option value="Pending">Pending</option>
-                            <option value="Confirmed">Confirmed</option>
-                            <option value="Rescheduled">Rescheduled</option>
-                            <option value="Completed">Completed</option>
-                            <option value="Cancelled">Cancelled</option>
-                          </select>
-                        </div>
-
-                        <h4 className="font-bold text-slate-900 text-sm mb-0.5">{b.customerName}</h4>
-                        <div className="text-xs text-slate-600 mb-2">{b.companyName}</div>
-
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1 mb-3">
-                          <div><strong>Service:</strong> {b.requestedService}</div>
-                          <div><strong>Site Address:</strong> {b.siteAddress}</div>
-                          <div><strong>Scheduled:</strong> {b.scheduledDate} at {b.scheduledTime}</div>
-                          {b.notes && <div className="text-slate-500 italic">Notes: {b.notes}</div>}
-                        </div>
-                      </div>
-
-                      <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-slate-800">+91 {b.phone}</span>
-                        <div className="flex items-center gap-1.5">
-                          <a
-                            href={`tel:${b.phone}`}
-                            className="p-1.5 rounded-lg bg-slate-100 text-slate-700 hover:bg-blue-100"
-                            title="Call"
-                          >
-                            <Phone className="w-3.5 h-3.5" />
-                          </a>
-                          <a
-                            href={`https://wa.me/91${b.phone}?text=${encodeURIComponent(
-                              `Hello ${b.customerName}, this is Blue Bird Enterprises regarding your service booking (${b.bookingReference}).`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                            title="WhatsApp"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                          </a>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
+                            <td className="py-2.5 px-3 align-middle">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${cb.referenceNo}`}
+                                checked={selectedIds.includes(cb.id)}
+                                onChange={() => toggleSelectOne(cb.id)}
+                                className="rounded border-slate-300 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 align-middle font-mono font-bold text-blue-700 whitespace-nowrap">
+                              {cb.referenceNo}
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-bold text-slate-900">{cb.customerName}</div>
+                              <div className="text-[11px] text-slate-500">
+                                {cb.companyName} • +91 {cb.mobileNumber}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-semibold text-slate-800">
+                                {cb.preferredDate} ({cb.preferredTime})
+                              </div>
+                              <div className="text-[11px] text-slate-500 truncate max-w-[220px]">
+                                {cb.notes}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <select
+                                value={cb.status}
+                                onChange={(e) =>
+                                  handleCallbackStatus(cb.id, e.target.value as CallbackStatus)
+                                }
+                                className="text-[11px] font-semibold px-2 py-1 rounded border border-slate-300 bg-white cursor-pointer"
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="completed">Completed</option>
+                                <option value="rescheduled">Rescheduled</option>
+                                <option value="cancelled">Cancelled</option>
+                              </select>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() =>
+                                    setViewingRecord({ entityType: 'callbacks', data: cb })
+                                  }
+                                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setEditingRecord({
+                                      entityType: 'callbacks',
+                                      data: { ...cb },
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestMoveToTrash('callbacks', [cb.id], cb.referenceNo)
+                                  }
+                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold cursor-pointer"
+                                >
+                                  Move to Trash
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestPermanentDelete('callbacks', [cb.id], cb.referenceNo)
+                                  }
+                                  className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold cursor-pointer"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 5: QUOTATION MANAGEMENT */}
+          {/* TAB 4: BOOKINGS */}
+          {activeTab === 'bookings' && (
+            <div className="space-y-2.5">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={bookingSearch}
+                    onChange={(e) => setBookingSearch(e.target.value)}
+                    placeholder="Search bookings..."
+                    className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50"
+                  />
+                </div>
+                <select
+                  value={bookingStatusFilter}
+                  onChange={(e) => setBookingStatusFilter(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-slate-50 font-medium"
+                >
+                  <option value="all">All Status ({activeBookings.length})</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Confirmed">Confirmed</option>
+                  <option value="Rescheduled">Rescheduled</option>
+                  <option value="Completed">Completed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              {renderSelectionBar(
+                'bookings',
+                filteredBookings.map((b) => b.id)
+              )}
+
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                      <tr>
+                        <th className="py-2 px-3 w-8">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all bookings"
+                            checked={
+                              filteredBookings.length > 0 &&
+                              filteredBookings.every((b) => selectedIds.includes(b.id))
+                            }
+                            onChange={(e) =>
+                              e.target.checked
+                                ? handleSelectAll(filteredBookings.map((b) => b.id))
+                                : handleClearSelection()
+                            }
+                            className="rounded border-slate-300 cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2 px-3">Ref</th>
+                        <th className="py-2 px-3">Customer</th>
+                        <th className="py-2 px-3">Service & Schedule</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredBookings.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-6 text-center text-slate-500">
+                            No bookings found.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredBookings.map((b) => (
+                          <tr
+                            key={b.id}
+                            className={`hover:bg-slate-50 ${
+                              selectedIds.includes(b.id) ? 'bg-blue-50/40' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 align-middle">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${b.bookingReference}`}
+                                checked={selectedIds.includes(b.id)}
+                                onChange={() => toggleSelectOne(b.id)}
+                                className="rounded border-slate-300 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 align-middle font-mono font-bold text-blue-700 whitespace-nowrap">
+                              {b.bookingReference}
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-bold text-slate-900">{b.customerName}</div>
+                              <div className="text-[11px] text-slate-500">
+                                {b.companyName} • +91 {b.phone}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-semibold text-slate-800">
+                                {b.requestedService}
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                {b.scheduledDate} at {b.scheduledTime} • {b.siteAddress}
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <select
+                                value={b.status}
+                                onChange={(e) =>
+                                  handleBookingStatus(b.id, e.target.value as any)
+                                }
+                                className="text-[11px] font-semibold px-2 py-1 rounded border border-slate-300 bg-white cursor-pointer"
+                              >
+                                <option value="Pending">Pending</option>
+                                <option value="Confirmed">Confirmed</option>
+                                <option value="Rescheduled">Rescheduled</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Cancelled">Cancelled</option>
+                              </select>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() =>
+                                    setViewingRecord({ entityType: 'bookings', data: b })
+                                  }
+                                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setEditingRecord({
+                                      entityType: 'bookings',
+                                      data: { ...b },
+                                    })
+                                  }
+                                  className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestMoveToTrash('bookings', [b.id], b.bookingReference)
+                                  }
+                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold cursor-pointer"
+                                >
+                                  Move to Trash
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestPermanentDelete('bookings', [b.id], b.bookingReference)
+                                  }
+                                  className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold cursor-pointer"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 5: QUOTATIONS */}
           {activeTab === 'quotations' && (
-            <div className="space-y-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-                <div>
-                  <h4 className="font-heading font-bold text-slate-900 text-sm">
-                    Industrial GST Quotation Records
-                  </h4>
-                  <p className="text-xs text-slate-500">
-                    Create, manage, and print official Blue Bird Enterprises quotations with 18% GST (CGST 9% + SGST 9%).
-                  </p>
+            <div className="space-y-2.5">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={quoteSearch}
+                    onChange={(e) => setQuoteSearch(e.target.value)}
+                    placeholder="Search quotations..."
+                    className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50"
+                  />
                 </div>
                 <button
-                  onClick={() => setIsCreatingQuote(true)}
-                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  onClick={openNewQuotationModal}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 flex items-center gap-1 cursor-pointer"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-3.5 h-3.5" />
                   <span>New Quotation</span>
                 </button>
               </div>
 
-              {/* Quotations List */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {quotations.map((q) => (
-                  <div
-                    key={q.id}
-                    className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-mono font-bold text-blue-700 text-xs">
-                          {q.quotationNo}
-                        </span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                          q.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' :
-                          q.status === 'sent' ? 'bg-blue-100 text-blue-800' :
-                          'bg-slate-100 text-slate-700'
-                        }`}>
-                          {q.status}
-                        </span>
-                      </div>
+              {renderSelectionBar(
+                'quotations',
+                filteredQuotations.map((q) => q.id)
+              )}
 
-                      <h4 className="font-bold text-slate-900 text-sm">
-                        {q.companyName}
-                      </h4>
-                      <p className="text-xs text-slate-500 mb-3">Attn: {q.clientName}</p>
-
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1 mb-4">
-                        <div className="flex justify-between text-slate-600">
-                          <span>Items:</span>
-                          <span className="font-bold">{q.items.length} Service(s)</span>
-                        </div>
-                        <div className="flex justify-between text-slate-600">
-                          <span>Subtotal:</span>
-                          <span className="font-mono">{formatINR(q.subtotal)}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-600">
-                          <span>GST (18%):</span>
-                          <span className="font-mono">{formatINR(q.totalGst)}</span>
-                        </div>
-                        <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-1 text-sm">
-                          <span>Grand Total:</span>
-                          <span className="font-mono text-blue-800">{formatINR(q.grandTotal)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                      <span className="text-[11px] text-slate-400">Date: {q.date}</span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => generateQuotationPDF(q)}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
-                          title="Save official PDF directly"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Save PDF</span>
-                        </button>
-                        <button
-                          onClick={() => setViewingQuote(q)}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 flex items-center gap-1 cursor-pointer"
-                          title="View and Print"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                      <tr>
+                        <th className="py-2 px-3 w-8">
+                          <input
+                            type="checkbox"
+                            aria-label="Select all quotations"
+                            checked={
+                              filteredQuotations.length > 0 &&
+                              filteredQuotations.every((q) => selectedIds.includes(q.id))
+                            }
+                            onChange={(e) =>
+                              e.target.checked
+                                ? handleSelectAll(filteredQuotations.map((q) => q.id))
+                                : handleClearSelection()
+                            }
+                            className="rounded border-slate-300 cursor-pointer"
+                          />
+                        </th>
+                        <th className="py-2 px-3">Quote No</th>
+                        <th className="py-2 px-3">Client & Company</th>
+                        <th className="py-2 px-3">Items</th>
+                        <th className="py-2 px-3">Grand Total</th>
+                        <th className="py-2 px-3">Status</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredQuotations.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-6 text-center text-slate-500">
+                            No quotations found.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredQuotations.map((q) => (
+                          <tr
+                            key={q.id}
+                            className={`hover:bg-slate-50 ${
+                              selectedIds.includes(q.id) ? 'bg-blue-50/40' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 align-middle">
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${q.quotationNo}`}
+                                checked={selectedIds.includes(q.id)}
+                                onChange={() => toggleSelectOne(q.id)}
+                                className="rounded border-slate-300 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 align-middle whitespace-nowrap">
+                              <div className="font-mono font-bold text-blue-700">
+                                {q.quotationNo}
+                              </div>
+                              <div className="text-[10px] text-slate-400">{q.date}</div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-bold text-slate-900">{q.companyName}</div>
+                              <div className="text-[11px] text-slate-500">{q.clientName}</div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <span className="font-semibold text-slate-700">
+                                {q.items.length} item(s)
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle font-mono font-bold text-slate-900 whitespace-nowrap">
+                              {formatINR(q.grandTotal)}
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[10px] uppercase">
+                                {q.status}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() => setViewingQuote(q)}
+                                  className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => openEditQuotationModal(q)}
+                                  className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => generateQuotationPDF(q)}
+                                  className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold cursor-pointer"
+                                >
+                                  PDF
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestMoveToTrash('quotations', [q.id], q.quotationNo)
+                                  }
+                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold cursor-pointer"
+                                >
+                                  Move to Trash
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    requestPermanentDelete('quotations', [q.id], q.quotationNo)
+                                  }
+                                  className="px-2 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold cursor-pointer"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
-              {/* Create Quotation Form Modal */}
+              {/* Create / Edit Quotation Modal */}
               {isCreatingQuote && (
-                <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 overflow-y-auto animate-in fade-in">
+                <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-3 overflow-y-auto">
                   <div
-                    className="bg-white rounded-2xl max-w-3xl w-full border border-slate-300 shadow-2xl relative my-6 max-h-[90vh] flex flex-col overflow-hidden"
+                    className="bg-white rounded-xl max-w-2xl w-full border border-slate-300 shadow-2xl relative my-4 max-h-[92vh] flex flex-col overflow-hidden"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="bg-slate-900 text-white p-4 px-6 flex items-center justify-between">
-                      <h4 className="font-heading font-bold text-sm sm:text-base">
-                        Create New Official GST Quotation
+                    <div className="bg-slate-900 text-white py-3 px-4 flex items-center justify-between">
+                      <h4 className="font-heading font-bold text-sm">
+                        {editingQuoteId ? 'Edit Quotation' : 'New GST Quotation'}
                       </h4>
                       <button
-                        onClick={() => setIsCreatingQuote(false)}
-                        className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+                        onClick={() => {
+                          setIsCreatingQuote(false);
+                          setEditingQuoteId(null);
+                        }}
+                        className="p-1 rounded bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     </div>
 
-                    <form onSubmit={handleSaveNewQuotation} className="p-6 overflow-y-auto space-y-4 text-xs">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <form
+                      onSubmit={handleSaveNewQuotation}
+                      className="p-4 overflow-y-auto space-y-3 text-xs"
+                    >
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         <div>
-                          <label className="font-bold text-slate-700 block mb-1">Contact Person Name *</label>
+                          <label className="font-bold text-slate-700 block mb-1">
+                            Customer Name *
+                          </label>
                           <input
                             type="text"
                             required
                             value={newQuoteClient}
                             onChange={(e) => setNewQuoteClient(e.target.value)}
-                            placeholder="e.g. Ramesh Patil"
+                            placeholder="Customer Name"
                             className="w-full p-2 border rounded-lg bg-slate-50"
                           />
                         </div>
                         <div>
-                          <label className="font-bold text-slate-700 block mb-1">Company / Plant Name *</label>
+                          <label className="font-bold text-slate-700 block mb-1">
+                            Company Name *
+                          </label>
                           <input
                             type="text"
                             required
                             value={newQuoteCompany}
                             onChange={(e) => setNewQuoteCompany(e.target.value)}
-                            placeholder="e.g. Sterling Pharma Ltd."
+                            placeholder="Company / Facility"
                             className="w-full p-2 border rounded-lg bg-slate-50"
                           />
                         </div>
                         <div>
-                          <label className="font-bold text-slate-700 block mb-1">Client Mobile (10 Digits)</label>
-                          <div className="relative">
-                            <span className="absolute left-2.5 top-2 text-xs font-semibold text-slate-500">+91</span>
-                            <input
-                              type="tel"
-                              inputMode="numeric"
-                              maxLength={10}
-                              pattern="[0-9]{10}"
-                              value={newQuotePhone}
-                              onChange={(e) => setNewQuotePhone(sanitizeTenDigitMobile(e.target.value))}
-                              placeholder="9867833456"
-                              className="w-full pl-10 pr-2 py-2 border rounded-lg bg-slate-50 font-mono"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="font-bold text-slate-700 block mb-1">Client Email</label>
+                          <label className="font-bold text-slate-700 block mb-1">
+                            Mobile (10 Digits)
+                          </label>
                           <input
-                            type="email"
-                            value={newQuoteEmail}
-                            onChange={(e) => setNewQuoteEmail(e.target.value)}
-                            placeholder="client@plant.com"
-                            className="w-full p-2 border rounded-lg bg-slate-50"
+                            type="tel"
+                            inputMode="numeric"
+                            maxLength={10}
+                            pattern="[0-9]{10}"
+                            value={newQuotePhone}
+                            onChange={(e) =>
+                              setNewQuotePhone(sanitizeTenDigitMobile(e.target.value))
+                            }
+                            placeholder="9867833456"
+                            className="w-full p-2 border rounded-lg bg-slate-50 font-mono"
                           />
                         </div>
                         <div>
-                          <label className="font-bold text-slate-700 block mb-1">Client GSTIN (Optional)</label>
-                          <input
-                            type="text"
-                            value={newQuoteGstin}
-                            onChange={(e) => setNewQuoteGstin(e.target.value)}
-                            placeholder="27AABCU9603R1ZM"
-                            className="w-full p-2 border rounded-lg bg-slate-50 uppercase"
-                          />
-                        </div>
-                        <div>
-                          <label className="font-bold text-slate-700 block mb-1">Site / Works Location</label>
+                          <label className="font-bold text-slate-700 block mb-1">
+                            Site Address
+                          </label>
                           <input
                             type="text"
                             value={newQuoteAddress}
@@ -1248,43 +1973,65 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                             className="w-full p-2 border rounded-lg bg-slate-50"
                           />
                         </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">Email</label>
+                          <input
+                            type="email"
+                            value={newQuoteEmail}
+                            onChange={(e) => setNewQuoteEmail(e.target.value)}
+                            placeholder="client@company.com"
+                            className="w-full p-2 border rounded-lg bg-slate-50"
+                          />
+                        </div>
+                        <div>
+                          <label className="font-bold text-slate-700 block mb-1">GSTIN</label>
+                          <input
+                            type="text"
+                            value={newQuoteGstin}
+                            onChange={(e) => setNewQuoteGstin(e.target.value)}
+                            placeholder="Optional"
+                            className="w-full p-2 border rounded-lg bg-slate-50 uppercase"
+                          />
+                        </div>
                       </div>
 
-                      {/* Line Items */}
-                      <div className="pt-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                          <div>
-                            <label className="font-bold text-slate-800 block">
-                              Quotation Line Items
-                            </label>
-                            <span className="text-[11px] text-slate-500">
-                              Select any listed company service from the dropdown or choose Manual / Custom Entry
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
+                      {/* Simplified Line Items Section */}
+                      <div className="pt-2 border-t border-slate-200">
+                        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                          <label className="font-bold text-slate-800">Line Items</label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={serviceFilterQuery}
+                              onChange={(e) => setServiceFilterQuery(e.target.value)}
+                              placeholder="Filter services..."
+                              className="px-2 py-1 border border-slate-300 rounded text-[11px] bg-slate-50 w-32"
+                            />
                             <button
                               type="button"
                               onClick={handleAddQuoteItem}
-                              className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-bold hover:bg-blue-100 flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 font-bold hover:bg-blue-100 flex items-center gap-1 cursor-pointer"
                             >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add Service Item</span>
+                              <Plus className="w-3 h-3" />
+                              <span>Add Item</span>
                             </button>
                             <button
                               type="button"
                               onClick={handleAddManualQuoteItem}
-                              className="px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold hover:bg-amber-100 flex items-center gap-1 cursor-pointer"
+                              className="px-2.5 py-1 rounded bg-amber-50 text-amber-800 border border-amber-200 font-bold hover:bg-amber-100 flex items-center gap-1 cursor-pointer"
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
+                              <Edit3 className="w-3 h-3" />
                               <span>Add Manual Item</span>
                             </button>
                           </div>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {newQuoteItems.map((item, idx) => {
                             const matchedPreset = QUOTATION_SERVICE_PRESETS.find(
-                              (p) => p.title === item.serviceOption || p.defaultDescription === item.description
+                              (p) =>
+                                p.title === item.serviceOption ||
+                                p.defaultDescription === item.description
                             );
                             const currentSelectValue =
                               item.serviceOption === MANUAL_SERVICE_OPTION_VALUE
@@ -1296,89 +2043,99 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                             return (
                               <div
                                 key={item.id}
-                                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2.5"
+                                className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 space-y-2"
                               >
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
-                                  <div className="flex items-center gap-2 flex-1">
-                                    <span className="w-5 h-5 rounded-full bg-slate-800 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                                      {idx + 1}
-                                    </span>
-                                    <select
-                                      aria-label={`Select service for line item ${idx + 1}`}
-                                      value={currentSelectValue}
-                                      onChange={(e) => handleServiceOptionChange(idx, e.target.value)}
-                                      className="flex-1 p-2 border border-slate-300 rounded-lg bg-white text-xs font-semibold text-slate-900 focus:border-blue-600"
-                                    >
-                                      <option value={MANUAL_SERVICE_OPTION_VALUE}>
-                                        Manual / Custom Item (Type Custom Service Below)
+                                <div className="flex items-center gap-2 justify-between">
+                                  <span className="text-[11px] font-bold text-slate-600">
+                                    #{idx + 1}
+                                  </span>
+                                  <select
+                                    aria-label={`Select Item ${idx + 1}`}
+                                    value={currentSelectValue}
+                                    onChange={(e) =>
+                                      handleServiceOptionChange(idx, e.target.value)
+                                    }
+                                    className="flex-1 p-1.5 border border-slate-300 rounded bg-white text-xs font-semibold text-slate-900"
+                                  >
+                                    <option value="" disabled>
+                                      Select Item
+                                    </option>
+                                    {visibleServicePresets.map((preset) => (
+                                      <option key={preset.id} value={preset.title}>
+                                        {preset.title}
                                       </option>
-                                      {QUOTATION_SERVICE_PRESETS.map((preset) => (
-                                        <option key={preset.id} value={preset.title}>
-                                          {preset.categoryTitle}: {preset.title}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
+                                    ))}
+                                    <option value={MANUAL_SERVICE_OPTION_VALUE}>
+                                      Custom Item
+                                    </option>
+                                  </select>
 
                                   {newQuoteItems.length > 1 && (
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveQuoteItem(idx)}
-                                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg self-end sm:self-auto flex items-center gap-1 text-[11px] font-semibold cursor-pointer"
-                                      title="Remove line item"
+                                      className="px-2 py-1 text-rose-600 hover:bg-rose-50 rounded text-[11px] font-bold cursor-pointer"
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      <span className="sm:hidden">Remove</span>
+                                      Delete
                                     </button>
                                   )}
                                 </div>
 
-                                <div className="flex flex-col sm:flex-row gap-2 items-center">
-                                  <input
-                                    type="text"
-                                    required
-                                    placeholder={
-                                      currentSelectValue === MANUAL_SERVICE_OPTION_VALUE
-                                        ? 'Enter manual / custom service description...'
-                                        : 'Service description & scope details...'
-                                    }
-                                    value={item.description}
-                                    onChange={(e) => handleUpdateQuoteItem(idx, 'description', e.target.value)}
-                                    className="flex-1 p-2 border border-slate-300 rounded-lg bg-white text-xs w-full"
-                                  />
-                                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                                    <div className="w-24">
-                                      <span className="text-[10px] text-slate-500 block mb-0.5">Unit</span>
-                                      <input
-                                        type="text"
-                                        placeholder="Trip / Job"
-                                        value={item.unit}
-                                        onChange={(e) => handleUpdateQuoteItem(idx, 'unit', e.target.value)}
-                                        className="w-full p-1.5 border border-slate-300 rounded-lg bg-white text-xs"
-                                      />
-                                    </div>
-                                    <div className="w-16">
-                                      <span className="text-[10px] text-slate-500 block mb-0.5">Qty</span>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        placeholder="Qty"
-                                        value={item.quantity}
-                                        onChange={(e) => handleUpdateQuoteItem(idx, 'quantity', Number(e.target.value))}
-                                        className="w-full p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-mono"
-                                      />
-                                    </div>
-                                    <div className="w-28">
-                                      <span className="text-[10px] text-slate-500 block mb-0.5">Rate (₹)</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="Rate (₹)"
-                                        value={item.unitRate}
-                                        onChange={(e) => handleUpdateQuoteItem(idx, 'unitRate', Number(e.target.value))}
-                                        className="w-full p-1.5 border border-slate-300 rounded-lg bg-white text-xs font-mono"
-                                      />
-                                    </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                  <div className="sm:col-span-6">
+                                    <input
+                                      type="text"
+                                      required
+                                      placeholder="Item name or short description"
+                                      value={item.description}
+                                      onChange={(e) =>
+                                        handleUpdateQuoteItem(idx, 'description', e.target.value)
+                                      }
+                                      className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Unit"
+                                      value={item.unit}
+                                      onChange={(e) =>
+                                        handleUpdateQuoteItem(idx, 'unit', e.target.value)
+                                      }
+                                      className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      placeholder="Qty"
+                                      value={item.quantity}
+                                      onChange={(e) =>
+                                        handleUpdateQuoteItem(
+                                          idx,
+                                          'quantity',
+                                          Number(e.target.value)
+                                        )
+                                      }
+                                      className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      placeholder="Rate"
+                                      value={item.unitRate}
+                                      onChange={(e) =>
+                                        handleUpdateQuoteItem(
+                                          idx,
+                                          'unitRate',
+                                          Number(e.target.value)
+                                        )
+                                      }
+                                      className="w-full p-1.5 border border-slate-300 rounded bg-white text-xs font-mono"
+                                    />
                                   </div>
                                 </div>
                               </div>
@@ -1386,52 +2143,40 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
                           })}
                         </div>
 
-                        {/* Live Totals Summary Bar */}
+                        {/* Totals Summary */}
                         {(() => {
                           const liveTotals = calculateQuotationTotals(newQuoteItems);
                           return (
-                            <div className="mt-3 p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-                              <div className="text-slate-600">
-                                <span>Subtotal: </span>
-                                <strong className="font-mono text-slate-900">{formatINR(liveTotals.subtotal)}</strong>
-                                <span className="mx-2 text-slate-300">|</span>
-                                <span>GST (18%): </span>
-                                <strong className="font-mono text-slate-900">{formatINR(liveTotals.totalGst)}</strong>
-                              </div>
-                              <div className="text-blue-900 font-bold">
-                                <span>Grand Total: </span>
-                                <span className="font-mono text-sm">{formatINR(liveTotals.grandTotal)}</span>
-                              </div>
+                            <div className="mt-2.5 p-2.5 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-between text-xs">
+                              <span>
+                                Subtotal: <strong>{formatINR(liveTotals.subtotal)}</strong> + GST
+                                (18%): <strong>{formatINR(liveTotals.totalGst)}</strong>
+                              </span>
+                              <span className="font-bold text-blue-900">
+                                Total: {formatINR(liveTotals.grandTotal)}
+                              </span>
                             </div>
                           );
                         })()}
                       </div>
 
-                      {/* Terms */}
-                      <div>
-                        <label className="font-bold text-slate-700 block mb-1">Commercial Terms & Conditions (One per line)</label>
-                        <textarea
-                          rows={3}
-                          value={newQuoteTerms}
-                          onChange={(e) => setNewQuoteTerms(e.target.value)}
-                          className="w-full p-2 border rounded-lg bg-slate-50 text-xs"
-                        ></textarea>
-                      </div>
-
-                      <div className="pt-3 border-t flex justify-end gap-2">
+                      <div className="pt-2 border-t flex justify-end gap-2">
                         <button
                           type="button"
-                          onClick={() => setIsCreatingQuote(false)}
-                          className="px-4 py-2 rounded-xl bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 cursor-pointer"
+                          onClick={() => {
+                            setIsCreatingQuote(false);
+                            setEditingQuoteId(null);
+                          }}
+                          className="px-3.5 py-1.5 rounded-lg bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-md flex items-center gap-1.5 cursor-pointer"
+                          className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 cursor-pointer flex items-center gap-1"
                         >
-                          <Save className="w-4 h-4" />
-                          <span>Save & Generate PDF</span>
+                          <Save className="w-3.5 h-3.5" />
+                          <span>Save</span>
                         </button>
                       </div>
                     </form>
@@ -1441,180 +2186,696 @@ export const OwnerPortalModal: React.FC<OwnerPortalModalProps> = ({
             </div>
           )}
 
-          {/* TAB 6: REPORTS & ANALYTICS */}
-          {activeTab === 'reports' && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-                <h4 className="font-heading font-bold text-slate-900 text-sm mb-4">
-                  Navi Mumbai & MIDC Industrial Service Demand
-                </h4>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                      <span>Mechanized Suction Tanker Operations (Sludge/Slurry)</span>
-                      <span>52% of Inquiries</span>
-                    </div>
-                    <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-blue-600 rounded-full" style={{ width: '52%' }}></div>
-                    </div>
+          {/* TAB 6: TRASH SECTION */}
+          {activeTab === 'trash' && (
+            <div className="space-y-2.5">
+              {/* Trash Header & Search */}
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[220px]">
+                  <div className="relative flex-1 min-w-[160px]">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                    <input
+                      type="text"
+                      value={trashSearch}
+                      onChange={(e) => setTrashSearch(e.target.value)}
+                      placeholder="Search trashed items..."
+                      className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-slate-50"
+                    />
                   </div>
 
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                      <span>High-Pressure Water Jetting & Choke Desilting</span>
-                      <span>28% of Inquiries</span>
-                    </div>
-                    <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-emerald-600 rounded-full" style={{ width: '28%' }}></div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                      <span>ETP / STP Tank Cleaning & Desludging</span>
-                      <span>14% of Inquiries</span>
-                    </div>
-                    <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-indigo-600 rounded-full" style={{ width: '14%' }}></div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                      <span>Civil Repairs, Chambers & Pipelines</span>
-                      <span>6% of Inquiries</span>
-                    </div>
-                    <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-amber-600 rounded-full" style={{ width: '6%' }}></div>
-                    </div>
-                  </div>
+                  <select
+                    value={trashTypeFilter}
+                    onChange={(e) => setTrashTypeFilter(e.target.value as any)}
+                    className="px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-slate-50 font-medium"
+                  >
+                    <option value="all">All Types ({totalTrashCount})</option>
+                    <option value="enquiries">Enquiries ({trashedInquiries.length})</option>
+                    <option value="callbacks">Callbacks ({trashedCallbacks.length})</option>
+                    <option value="bookings">Bookings ({trashedBookings.length})</option>
+                    <option value="quotations">Quotations ({trashedQuotations.length})</option>
+                  </select>
                 </div>
-              </div>
 
-              {/* Conversion Statistics Summary */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 text-center">
-                  <span className="text-slate-500 text-xs block mb-1">Lead to Quote Ratio</span>
-                  <span className="font-heading font-extrabold text-2xl text-slate-900">78%</span>
-                </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 text-center">
-                  <span className="text-slate-500 text-xs block mb-1">Avg Turnaround Time</span>
-                  <span className="font-heading font-extrabold text-2xl text-emerald-700">Same Day</span>
-                </div>
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 text-center">
-                  <span className="text-slate-500 text-xs block mb-1">Zero Manual Scavenging</span>
-                  <span className="font-heading font-extrabold text-2xl text-blue-700">100% Mechanized</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 8: SETTINGS MANAGEMENT */}
-          {activeTab === 'settings' && (
-            <div className="space-y-4">
-              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-                <h4 className="font-heading font-bold text-slate-900 text-sm mb-1">
-                  Enterprise Contact & Statutory Configuration
-                </h4>
-                <p className="text-xs text-slate-500 mb-6">
-                  Update customer-facing telephone lines, WhatsApp numbers, email, and business hours.
-                </p>
-
-                {settingsSaved && (
-                  <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 shrink-0" />
-                    <span>Business settings updated successfully.</span>
-                  </div>
+                {totalTrashCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={requestEmptyTrash}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Empty Trash</span>
+                  </button>
                 )}
+              </div>
 
-                <form onSubmit={handleSaveSettings} className="space-y-4 text-xs">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Primary Telephone Line (10 Digits)</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={10}
-                        pattern="[0-9]{10}"
-                        value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.primaryPhone))}
-                        onChange={(e) => setSettings({ ...settings, primaryPhone: sanitizeTenDigitMobile(e.target.value) })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs font-mono"
-                      />
-                    </div>
+              {/* Trash Bulk Selection Bar */}
+              <div className="bg-white px-3 py-2 rounded-lg border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allSelected =
+                        allTrashRecords.length > 0 &&
+                        allTrashRecords.every((r) => isTrashItemSelected(r.entityType, r.id));
+                      if (allSelected) {
+                        setSelectedTrashItems([]);
+                      } else {
+                        setSelectedTrashItems(
+                          allTrashRecords.map((r) => ({ entityType: r.entityType, id: r.id }))
+                        );
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold cursor-pointer"
+                  >
+                    <span>Select All</span>
+                  </button>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Secondary Telephone Line (10 Digits)</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={10}
-                        pattern="[0-9]{10}"
-                        value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.secondaryPhone))}
-                        onChange={(e) => setSettings({ ...settings, secondaryPhone: sanitizeTenDigitMobile(e.target.value) })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs font-mono"
-                      />
-                    </div>
+                  {selectedTrashItems.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTrashItems([])}
+                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium cursor-pointer"
+                      >
+                        Clear Selection
+                      </button>
+                      <span className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 font-bold border border-rose-200">
+                        {selectedTrashItems.length} selected
+                      </span>
+                    </>
+                  )}
+                </div>
 
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">WhatsApp Dispatch Number (10 Digits)</label>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={10}
-                        pattern="[0-9]{10}"
-                        value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.whatsappNumber))}
-                        onChange={(e) => setSettings({ ...settings, whatsappNumber: sanitizeTenDigitMobile(e.target.value) })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="font-bold text-slate-700 block mb-1">Official Correspondence Email</label>
-                      <input
-                        type="email"
-                        value={settings.email}
-                        onChange={(e) => setSettings({ ...settings, email: e.target.value })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-700 block mb-1">Office & Yard Address</label>
-                      <input
-                        type="text"
-                        value={settings.address}
-                        onChange={(e) => setSettings({ ...settings, address: e.target.value })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs"
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-700 block mb-1">Operating Hours Notice</label>
-                      <input
-                        type="text"
-                        value={settings.businessHours}
-                        onChange={(e) => setSettings({ ...settings, businessHours: e.target.value })}
-                        className="w-full p-2.5 border rounded-xl bg-slate-50 text-xs"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-200 flex justify-end">
+                {selectedTrashItems.length > 0 && (
+                  <div className="flex items-center gap-1.5">
                     <button
-                      type="submit"
-                      className="px-6 py-2.5 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 cursor-pointer shadow-md flex items-center gap-2"
+                      type="button"
+                      onClick={handleBulkRestoreTrash}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer"
                     >
-                      <Save className="w-4 h-4" />
-                      <span>Save Business Settings</span>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Restore</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPermanentConfirmChecked(false);
+                        setConfirmDialog({
+                          isOpen: true,
+                          mode: 'permanent',
+                          ids: selectedTrashItems.map((t) => t.id),
+                          label: `${selectedTrashItems.length} selected trashed item(s)`,
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete Permanently</span>
                     </button>
                   </div>
-                </form>
+                )}
+              </div>
+
+              {/* Trash Table */}
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                      <tr>
+                        <th className="py-2 px-3 w-8"></th>
+                        <th className="py-2 px-3">Type</th>
+                        <th className="py-2 px-3">Ref</th>
+                        <th className="py-2 px-3">Customer</th>
+                        <th className="py-2 px-3">Details</th>
+                        <th className="py-2 px-3">Deleted</th>
+                        <th className="py-2 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {allTrashRecords.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-8 text-center text-slate-500">
+                            Trash is empty.
+                          </td>
+                        </tr>
+                      ) : (
+                        allTrashRecords.map((item) => (
+                          <tr key={`${item.entityType}-${item.id}`} className="hover:bg-rose-50/30">
+                            <td className="py-2.5 px-3 align-middle">
+                              <input
+                                type="checkbox"
+                                checked={isTrashItemSelected(item.entityType, item.id)}
+                                onChange={() =>
+                                  toggleSelectTrashItem(item.entityType, item.id)
+                                }
+                                className="rounded border-slate-300 cursor-pointer"
+                              />
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px] uppercase">
+                                {item.typeLabel} (Trashed)
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle font-mono font-bold text-slate-700">
+                              {item.ref}
+                            </td>
+                            <td className="py-2.5 px-3 align-middle">
+                              <div className="font-bold text-slate-900">{item.name}</div>
+                              <div className="text-[11px] text-slate-500">{item.company}</div>
+                            </td>
+                            <td className="py-2.5 px-3 align-middle text-slate-600">
+                              {item.detail}
+                            </td>
+                            <td className="py-2.5 px-3 align-middle text-[11px] text-slate-500 whitespace-nowrap">
+                              {new Date(item.deletedAt).toLocaleDateString()}
+                            </td>
+                            <td className="py-2.5 px-3 align-middle text-right whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRestoreRecords(item.entityType, [item.id])
+                                  }
+                                  className="px-2.5 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Restore</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    requestPermanentDelete(
+                                      item.entityType,
+                                      [item.id],
+                                      item.ref
+                                    )
+                                  }
+                                  className="px-2.5 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Delete Permanently</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
+          {/* TAB 7: SETTINGS */}
+          {activeTab === 'settings' && (
+            <div className="bg-white p-4 rounded-lg border border-slate-200">
+              <h4 className="font-heading font-bold text-slate-900 text-sm mb-3">
+                Contact & Business Settings
+              </h4>
+              <form onSubmit={handleSaveSettings} className="space-y-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Primary Phone (10 Digits)
+                    </label>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
+                      value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.primaryPhone))}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          primaryPhone: sanitizeTenDigitMobile(e.target.value),
+                        })
+                      }
+                      className="w-full p-2 border rounded-lg bg-slate-50 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      Secondary Phone (10 Digits)
+                    </label>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
+                      value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.secondaryPhone))}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          secondaryPhone: sanitizeTenDigitMobile(e.target.value),
+                        })
+                      }
+                      className="w-full p-2 border rounded-lg bg-slate-50 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">
+                      WhatsApp Number (10 Digits)
+                    </label>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      maxLength={10}
+                      pattern="[0-9]{10}"
+                      value={sanitizeTenDigitMobile(cleanPhoneNumber(settings.whatsappNumber))}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          whatsappNumber: sanitizeTenDigitMobile(e.target.value),
+                        })
+                      }
+                      className="w-full p-2 border rounded-lg bg-slate-50 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Email</label>
+                    <input
+                      type="email"
+                      value={settings.email}
+                      onChange={(e) => setSettings({ ...settings, email: e.target.value })}
+                      className="w-full p-2 border rounded-lg bg-slate-50"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-slate-700 block mb-1">Office Address</label>
+                    <input
+                      type="text"
+                      value={settings.address}
+                      onChange={(e) => setSettings({ ...settings, address: e.target.value })}
+                      className="w-full p-2 border rounded-lg bg-slate-50"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200 flex justify-end">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* VIEW RECORD MODAL */}
+      {viewingRecord && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3"
+          onClick={() => setViewingRecord(null)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full border border-slate-300 shadow-xl overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+              <span className="font-bold text-sm">Record Details</span>
+              <button
+                onClick={() => setViewingRecord(null)}
+                className="p-1 rounded bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-2">
+              <div>
+                <span className="text-slate-500">Reference:</span>{' '}
+                <strong className="font-mono text-blue-700">
+                  {viewingRecord.data.referenceNo || viewingRecord.data.bookingReference}
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Customer:</span>{' '}
+                <strong>{viewingRecord.data.customerName}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Company:</span>{' '}
+                <strong>{viewingRecord.data.companyName}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Phone:</span>{' '}
+                <strong className="font-mono">
+                  +91 {viewingRecord.data.mobileNumber || viewingRecord.data.phone}
+                </strong>
+              </div>
+              {(viewingRecord.data.serviceRequired || viewingRecord.data.requestedService) && (
+                <div>
+                  <span className="text-slate-500">Service:</span>{' '}
+                  <strong>
+                    {viewingRecord.data.serviceRequired || viewingRecord.data.requestedService}
+                  </strong>
+                </div>
+              )}
+              {(viewingRecord.data.siteLocation || viewingRecord.data.siteAddress) && (
+                <div>
+                  <span className="text-slate-500">Location:</span>{' '}
+                  <span>{viewingRecord.data.siteLocation || viewingRecord.data.siteAddress}</span>
+                </div>
+              )}
+              {(viewingRecord.data.workDescription || viewingRecord.data.notes) && (
+                <div>
+                  <span className="text-slate-500">Notes:</span>{' '}
+                  <span>{viewingRecord.data.workDescription || viewingRecord.data.notes}</span>
+                </div>
+              )}
+              <div className="pt-3 border-t flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    const rec = viewingRecord;
+                    setViewingRecord(null);
+                    setEditingRecord({
+                      entityType: rec.entityType,
+                      data: { ...rec.data },
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded bg-blue-600 text-white font-bold cursor-pointer"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => setViewingRecord(null)}
+                  className="px-3 py-1.5 rounded bg-slate-200 text-slate-700 font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT RECORD MODAL */}
+      {editingRecord && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3"
+          onClick={() => setEditingRecord(null)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full border border-slate-300 shadow-xl overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+              <span className="font-bold text-sm">Edit Record</span>
+              <button
+                onClick={() => setEditingRecord(null)}
+                className="p-1 rounded bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedRecord} className="p-4 space-y-2.5">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Customer Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingRecord.data.customerName || ''}
+                  onChange={(e) =>
+                    setEditingRecord({
+                      ...editingRecord,
+                      data: { ...editingRecord.data, customerName: e.target.value },
+                    })
+                  }
+                  className="w-full p-2 border rounded bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Company Name</label>
+                <input
+                  type="text"
+                  value={editingRecord.data.companyName || ''}
+                  onChange={(e) =>
+                    setEditingRecord({
+                      ...editingRecord,
+                      data: { ...editingRecord.data, companyName: e.target.value },
+                    })
+                  }
+                  className="w-full p-2 border rounded bg-slate-50"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Mobile (10 Digits)</label>
+                <input
+                  type="tel"
+                  maxLength={10}
+                  value={
+                    editingRecord.data.mobileNumber !== undefined
+                      ? editingRecord.data.mobileNumber
+                      : editingRecord.data.phone || ''
+                  }
+                  onChange={(e) => {
+                    const val = sanitizeTenDigitMobile(e.target.value);
+                    setEditingRecord({
+                      ...editingRecord,
+                      data: {
+                        ...editingRecord.data,
+                        ...(editingRecord.data.mobileNumber !== undefined
+                          ? { mobileNumber: val }
+                          : { phone: val }),
+                      },
+                    });
+                  }}
+                  className="w-full p-2 border rounded bg-slate-50 font-mono"
+                />
+              </div>
+
+              {editingRecord.entityType === 'enquiries' && (
+                <>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Service</label>
+                    <select
+                      value={editingRecord.data.serviceRequired || ''}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          data: { ...editingRecord.data, serviceRequired: e.target.value },
+                        })
+                      }
+                      className="w-full p-2 border rounded bg-slate-50"
+                    >
+                      {QUOTATION_SERVICE_PRESETS.map((p) => (
+                        <option key={p.id} value={p.title}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Site Location</label>
+                    <input
+                      type="text"
+                      value={editingRecord.data.siteLocation || ''}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          data: { ...editingRecord.data, siteLocation: e.target.value },
+                        })
+                      }
+                      className="w-full p-2 border rounded bg-slate-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Notes</label>
+                    <textarea
+                      rows={2}
+                      value={editingRecord.data.internalNotes || ''}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          data: { ...editingRecord.data, internalNotes: e.target.value },
+                        })
+                      }
+                      className="w-full p-2 border rounded bg-slate-50"
+                    />
+                  </div>
+                </>
+              )}
+
+              {editingRecord.entityType === 'callbacks' && (
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Notes</label>
+                  <textarea
+                    rows={2}
+                    value={editingRecord.data.notes || ''}
+                    onChange={(e) =>
+                      setEditingRecord({
+                        ...editingRecord,
+                        data: { ...editingRecord.data, notes: e.target.value },
+                      })
+                    }
+                    className="w-full p-2 border rounded bg-slate-50"
+                  />
+                </div>
+              )}
+
+              {editingRecord.entityType === 'bookings' && (
+                <>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Service</label>
+                    <select
+                      value={editingRecord.data.requestedService || ''}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          data: { ...editingRecord.data, requestedService: e.target.value },
+                        })
+                      }
+                      className="w-full p-2 border rounded bg-slate-50"
+                    >
+                      {QUOTATION_SERVICE_PRESETS.map((p) => (
+                        <option key={p.id} value={p.title}>
+                          {p.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1">Site Address</label>
+                    <input
+                      type="text"
+                      value={editingRecord.data.siteAddress || ''}
+                      onChange={(e) =>
+                        setEditingRecord({
+                          ...editingRecord,
+                          data: { ...editingRecord.data, siteAddress: e.target.value },
+                        })
+                      }
+                      className="w-full p-2 border rounded bg-slate-50"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="pt-2 border-t flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingRecord(null)}
+                  className="px-3 py-1.5 rounded bg-slate-200 text-slate-700 font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-3.5 py-1.5 rounded bg-blue-600 text-white font-bold cursor-pointer"
+                >
+                  Save
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SAFE DELETION CONFIRMATION DIALOG */}
+      {confirmDialog.isOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3"
+          onClick={() => !isProcessingDelete && setConfirmDialog({ ...confirmDialog, isOpen: false })}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full border border-slate-300 shadow-2xl overflow-hidden text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className={`px-4 py-3 text-white flex items-center justify-between ${
+                confirmDialog.mode === 'trash' ? 'bg-amber-600' : 'bg-rose-600'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <AlertTriangle className="w-4 h-4" />
+                <span>
+                  {confirmDialog.mode === 'trash'
+                    ? 'Confirm Move to Trash'
+                    : confirmDialog.mode === 'empty_trash'
+                    ? 'Confirm Empty Trash'
+                    : 'Confirm Permanent Delete'}
+                </span>
+              </div>
+              <button
+                onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+                className="p-1 rounded bg-black/20 text-white cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {confirmDialog.mode === 'trash' ? (
+                <p className="text-slate-700 leading-relaxed">
+                  Are you sure you want to move <strong>{confirmDialog.label}</strong> to Trash? You
+                  can restore trashed items anytime from the Trash tab.
+                </p>
+              ) : (
+                <>
+                  <p className="text-slate-700 leading-relaxed">
+                    You are about to permanently delete <strong>{confirmDialog.label}</strong> from
+                    the database. This action cannot be undone.
+                  </p>
+                  <label className="flex items-start gap-2 p-2.5 rounded bg-rose-50 border border-rose-200 text-rose-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={permanentConfirmChecked}
+                      onChange={(e) => setPermanentConfirmChecked(e.target.checked)}
+                      className="mt-0.5 rounded border-rose-300 cursor-pointer"
+                    />
+                    <span className="font-semibold">
+                      I confirm permanent deletion of the selected record(s).
+                    </span>
+                  </label>
+                </>
+              )}
+
+              <div className="pt-2 border-t flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isProcessingDelete}
+                  onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+                  className="px-3.5 py-1.5 rounded bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    isProcessingDelete ||
+                    (confirmDialog.mode !== 'trash' && !permanentConfirmChecked)
+                  }
+                  onClick={executeConfirmedDelete}
+                  className={`px-4 py-1.5 rounded text-white font-bold cursor-pointer disabled:opacity-50 ${
+                    confirmDialog.mode === 'trash'
+                      ? 'bg-amber-600 hover:bg-amber-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  {isProcessingDelete
+                    ? 'Processing...'
+                    : confirmDialog.mode === 'trash'
+                    ? 'Move to Trash'
+                    : confirmDialog.mode === 'empty_trash'
+                    ? 'Empty Trash'
+                    : 'Delete Permanently'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Printable Quotation Modal */}
       {viewingQuote && (

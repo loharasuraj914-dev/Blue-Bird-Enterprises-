@@ -141,10 +141,30 @@ test('GitHub Pages Deployment & Subpath Compatibility', () => {
   const workflowContent = fs.readFileSync(workflowPath, 'utf-8');
   assert.ok(workflowContent.includes('https://xpyxilnmdrsopzpftmms.supabase.co'), 'Workflow must include Supabase URL');
 
-  const bundleJsPath = path.join(process.cwd(), 'public', 'gh-pages-bundle', 'app.js');
-  const bundleCssPath = path.join(process.cwd(), 'public', 'gh-pages-bundle', 'app.css');
+  const bundleDir = path.join(process.cwd(), 'public', 'gh-pages-bundle');
+  const bundleJsPath = path.join(bundleDir, 'app.js');
+  const bundleCssPath = path.join(bundleDir, 'app.css');
   assert.ok(fs.existsSync(bundleJsPath), 'Prebuilt GitHub Pages fallback JS bundle must exist');
   assert.ok(fs.existsSync(bundleCssPath), 'Prebuilt GitHub Pages fallback CSS bundle must exist');
+
+  // Verify every relative JS chunk imported by app.js (e.g. ./html2canvas-*.js, ./purify.es-*.js, etc.) exists and is non-empty
+  const appJsContent = fs.readFileSync(bundleJsPath, 'utf-8');
+  const relativeImports = [...appJsContent.matchAll(/["'`]\.\/([a-zA-Z0-9_.-]+\.js)["'`]/g)].map((m) => m[1]);
+  assert.ok(relativeImports.length > 0, 'app.js should have dynamic chunk imports to verify');
+  for (const relChunk of relativeImports) {
+    const chunkPath = path.join(bundleDir, relChunk);
+    assert.ok(fs.existsSync(chunkPath), `Referenced chunk ${relChunk} must exist in public/gh-pages-bundle/`);
+    assert.ok(fs.statSync(chunkPath).size > 0, `Referenced chunk ${relChunk} must not be an empty file`);
+
+    // Also verify any relative imports inside the companion chunk itself exist
+    const chunkContent = fs.readFileSync(chunkPath, 'utf-8');
+    const subImports = [...chunkContent.matchAll(/["'`]\.\/([a-zA-Z0-9_.-]+\.js)["'`]/g)].map((m) => m[1]);
+    for (const subChunk of subImports) {
+      const subChunkPath = path.join(bundleDir, subChunk);
+      assert.ok(fs.existsSync(subChunkPath), `Sub-chunk ${subChunk} imported by ${relChunk} must exist in public/gh-pages-bundle/`);
+      assert.ok(fs.statSync(subChunkPath).size > 0, `Sub-chunk ${subChunk} must not be empty`);
+    }
+  }
 
   const indexHtml = fs.readFileSync(path.join(process.cwd(), 'index.html'), 'utf-8');
   assert.ok(indexHtml.includes('__LOAD_GH_FALLBACK'), 'index.html must include automatic GitHub Pages fallback loader');
@@ -157,6 +177,45 @@ test('GitHub Pages Deployment & Subpath Compatibility', () => {
     'dist/index.html must reference assets under /Blue-Bird-Enterprises-/assets/'
   );
 });
+
+test('GallerySection: removes "Click to view details" text and disables image click popup modal', () => {
+  const galleryFile = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'GallerySection.tsx'),
+    'utf-8'
+  );
+  assert.ok(
+    !galleryFile.includes('Click to view details'),
+    'GallerySection must not contain "Click to view details" text'
+  );
+  assert.ok(
+    !galleryFile.includes('setActiveItem'),
+    'GallerySection must not open a popup modal when clicking an image'
+  );
+});
+
+test('Management Portal & Supabase Deletion: supports Move to Trash, Restore, Delete Permanently, Empty Trash, and quotation_items cascade', () => {
+  const migrationSql = fs.readFileSync(
+    path.join(process.cwd(), 'supabase', 'migrations', '20261023_initial_schema.sql'),
+    'utf-8'
+  );
+  assert.ok(migrationSql.includes('deleted_at TIMESTAMPTZ'), 'Migration must include deleted_at soft-delete column');
+  assert.ok(migrationSql.includes('public.quotation_items'), 'Migration must define quotation_items table');
+  assert.ok(migrationSql.includes('ON DELETE CASCADE'), 'quotation_items must cascade on quotation deletion');
+  assert.ok(migrationSql.includes('FOR DELETE\n    TO authenticated'), 'Only authenticated owners may permanently delete records');
+
+  const ownerPortalFile = fs.readFileSync(
+    path.join(process.cwd(), 'src', 'components', 'OwnerPortal', 'OwnerPortalModal.tsx'),
+    'utf-8'
+  );
+  assert.ok(ownerPortalFile.includes('Move to Trash'), 'Portal must include Move to Trash option');
+  assert.ok(ownerPortalFile.includes('Restore'), 'Portal must include Restore option');
+  assert.ok(ownerPortalFile.includes('Delete Permanently'), 'Portal must include Delete Permanently option');
+  assert.ok(ownerPortalFile.includes('Empty Trash'), 'Portal must include Empty Trash option');
+  assert.ok(ownerPortalFile.includes('Select All'), 'Portal must include Select All option');
+  assert.ok(ownerPortalFile.includes('Clear Selection'), 'Portal must include Clear Selection option');
+  assert.ok(ownerPortalFile.includes('Select Item'), 'Portal must include Select Item option');
+});
+
 
 
 

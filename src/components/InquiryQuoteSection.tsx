@@ -443,7 +443,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                         >
                           {SERVICES_DATA.map((s) => (
                             <option key={s.id} value={s.title}>
-                              {s.categoryTitle}: {s.title}
+                              {s.title}
                             </option>
                           ))}
                           <option value="Multiple Industrial Services">Multiple Services / Turnkey Project</option>
@@ -760,7 +760,7 @@ export const InquiryQuoteSection: React.FC<InquiryQuoteSectionProps> = ({
                         >
                           {SERVICES_DATA.map((s) => (
                             <option key={s.id} value={s.title}>
-                              {s.categoryTitle}: {s.title}
+                              {s.title}
                             </option>
                           ))}
                         </select>

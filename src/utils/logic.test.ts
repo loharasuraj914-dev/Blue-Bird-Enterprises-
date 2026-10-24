@@ -82,15 +82,36 @@ test('validateQuoteMandatoryFields requires only Your Name, Company/Facility Nam
   );
 });
 
-test('QUOTATION_SERVICE_PRESETS includes all listed services and supports manual option', () => {
+test('QUOTATION_SERVICE_PRESETS includes all listed services with short descriptions and supports manual option', () => {
   assert.equal(QUOTATION_SERVICE_PRESETS.length, SERVICES_DATA.length);
   for (const service of SERVICES_DATA) {
+    const preset = QUOTATION_SERVICE_PRESETS.find((p) => p.title === service.title);
     assert.ok(
-      QUOTATION_SERVICE_PRESETS.some((p) => p.title === service.title),
+      preset,
       `Service "${service.title}" must be pre-listed in quotation line item presets`
+    );
+    assert.equal(
+      preset.defaultDescription,
+      service.title,
+      'Preset defaultDescription must be the short service title without long sentences'
     );
   }
   assert.equal(MANUAL_SERVICE_OPTION_VALUE, '__manual__');
+});
+
+test('PortalStorage soft-delete, restore, and permanent-delete registry operations work accurately', async () => {
+  const { PortalStorage } = await import('../data/portalStore.ts');
+  const testKey = 'BBE-INQ-TEST-9999';
+  const ts = '2026-10-23T12:00:00.000Z';
+
+  PortalStorage.markSoftDeleted([testKey], ts);
+  assert.equal(PortalStorage.getDeletionRegistry().softDeleted[testKey], ts);
+
+  PortalStorage.clearSoftDeleted([testKey]);
+  assert.equal(PortalStorage.getDeletionRegistry().softDeleted[testKey], undefined);
+
+  PortalStorage.markPermanentlyDeleted([testKey]);
+  assert.ok(PortalStorage.getDeletionRegistry().permanentlyDeleted.includes(testKey));
 });
 
 test('cleanPhoneNumber strips punctuation and standard prefixes', () => {

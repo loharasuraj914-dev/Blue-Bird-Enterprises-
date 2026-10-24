@@ -235,7 +235,7 @@ export const QuoteModal: React.FC<QuoteModalProps> = ({
                 >
                   {SERVICES_DATA.map((s) => (
                     <option key={s.id} value={s.title}>
-                      {s.categoryTitle}: {s.title}
+                      {s.title}
                     </option>
                   ))}
                   <option value="Turnkey Drainage / Industrial Cleaning">Turnkey Project</option>

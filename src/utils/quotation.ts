@@ -37,7 +37,7 @@ export const QUOTATION_SERVICE_PRESETS: QuotationServicePreset[] = SERVICES_DATA
     id: service.id,
     title: service.title,
     categoryTitle: service.categoryTitle,
-    defaultDescription: `${service.title} — ${service.shortDesc}`,
+    defaultDescription: service.title,
     defaultUnit: defaults.unit,
     defaultRate: defaults.rate,
   };

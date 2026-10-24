@@ -145,39 +145,33 @@ export const Hero: React.FC<HeroProps> = ({ onOpenQuoteModal, onScrollToSection 
 
                 {/* Micro Thumbnails Strip below hero featuring 2 additional attached images */}
                 <div className="mt-2.5 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => onScrollToSection('gallery')}
-                    className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 transition-colors text-left group"
-                  >
+                  <div className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-left">
                     <img
                       src={ATTACHED_IMAGES.workerEtpCleaning}
                       alt="ETP Tank Cleaning"
                       className="w-12 h-12 rounded-md object-cover shrink-0"
                     />
                     <div className="min-w-0">
-                      <div className="text-[11px] font-bold text-slate-900 group-hover:text-blue-700 truncate">
+                      <div className="text-[11px] font-bold text-slate-900 truncate">
                         ETP/STP Desludging
                       </div>
                       <div className="text-[10px] text-slate-500">PPE Compliant Tank Wash</div>
                     </div>
-                  </button>
+                  </div>
 
-                  <button
-                    onClick={() => onScrollToSection('gallery')}
-                    className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 transition-colors text-left group"
-                  >
+                  <div className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-left">
                     <img
                       src={ATTACHED_IMAGES.drainJettingWorker}
                       alt="Drain Jetting"
                       className="w-12 h-12 rounded-md object-cover shrink-0"
                     />
                     <div className="min-w-0">
-                      <div className="text-[11px] font-bold text-slate-900 group-hover:text-blue-700 truncate">
+                      <div className="text-[11px] font-bold text-slate-900 truncate">
                         Drain Jetting & Sewer
                       </div>
                       <div className="text-[10px] text-slate-500">Chamber De-Choking</div>
                     </div>
-                  </button>
+                  </div>
                 </div>
               </div>
 
