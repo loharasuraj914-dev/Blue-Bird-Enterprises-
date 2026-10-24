@@ -257,4 +257,14 @@ test('normalizeServiceName maps legacy technical names to simple English names f
   );
 });
 
+test('COMPANY_DETAILS callButtonConfig and tel links match exact Call Now button specification', async () => {
+  const { COMPANY_DETAILS } = await import('../data/companyData.ts');
+  assert.equal(COMPANY_DETAILS.callButtonConfig.label, 'Call Now');
+  assert.equal(COMPANY_DETAILS.callButtonConfig.bgColor, '#E53935');
+  assert.equal(COMPANY_DETAILS.callButtonConfig.hoverBgColor, '#C62828');
+  assert.equal(COMPANY_DETAILS.callButtonConfig.textColor, '#FFFFFF');
+  assert.equal(COMPANY_DETAILS.phone1Tel, 'tel:+919867833456');
+  assert.equal(COMPANY_DETAILS.phone2Tel, 'tel:+919987324798');
+});
+
 

@@ -97,16 +97,18 @@ export const FloatingContactBar: React.FC = () => {
         className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-2xl"
       >
         <div className="max-w-md mx-auto grid grid-cols-3 gap-2">
-          {/* 1. CALL */}
+          {/* 1. CALL NOW */}
           <button
             onClick={() => setShowCallPopup(true)}
-            className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-slate-800/90 text-white hover:bg-slate-700/90 active:scale-95 transition-all text-center cursor-pointer border border-slate-700/60 shadow-xs"
-            aria-label="Call Blue Bird Enterprises"
+            className="flex flex-col items-center justify-center py-2 px-1 rounded-xl bg-[#E53935] text-white hover:bg-[#C62828] active:scale-95 transition-all text-center cursor-pointer border border-[#E53935]/90 shadow-md shadow-red-950/40"
+            aria-label="Call Now"
           >
-            <div className="w-8 h-8 rounded-full bg-blue-600/30 text-blue-400 flex items-center justify-center mb-1">
-              <Phone className="w-4 h-4 text-blue-300" />
+            <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center mb-1">
+              <Phone className="w-4 h-4 text-white" />
             </div>
-            <span className="text-[11px] font-bold tracking-tight">Call</span>
+            <span className="text-[11px] font-bold tracking-tight text-white">
+              {COMPANY_DETAILS.callButtonConfig.label}
+            </span>
           </button>
 
           {/* 2. WHATSAPP */}
@@ -138,21 +140,21 @@ export const FloatingContactBar: React.FC = () => {
         </div>
       </nav>
 
-      {/* DESKTOP FLOATING DOCK: Fixed bottom-right elegant minimalist pill */}
+      {/* DESKTOP FLOATING DOCK: Fixed bottom-right elegant minimalist dock */}
       <aside
         aria-label="Floating Contact Dock"
-        className="hidden lg:flex fixed bottom-6 right-6 z-40 items-center gap-1.5 p-1.5 rounded-full bg-slate-900/95 backdrop-blur-md border border-slate-800 shadow-2xl ring-1 ring-white/10"
+        className="hidden lg:flex fixed bottom-6 right-6 z-40 items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/95 backdrop-blur-md border border-slate-800 shadow-2xl ring-1 ring-white/10"
       >
-        {/* 1. CALL */}
+        {/* 1. CALL NOW */}
         <button
           onClick={() => setShowCallPopup(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold text-slate-200 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-[#E53935] text-white hover:bg-[#C62828] shadow-md shadow-red-950/40 transition-all cursor-pointer whitespace-nowrap"
           title="Click to view contact numbers"
         >
-          <div className="w-7 h-7 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center">
-            <Phone className="w-3.5 h-3.5" />
+          <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center">
+            <Phone className="w-3.5 h-3.5 text-white" />
           </div>
-          <span>Call</span>
+          <span className="text-white">{COMPANY_DETAILS.callButtonConfig.label}</span>
         </button>
 
         <span className="w-px h-5 bg-slate-800"></span>
@@ -160,7 +162,7 @@ export const FloatingContactBar: React.FC = () => {
         {/* 2. WHATSAPP */}
         <button
           onClick={handleWhatsAppClick}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-950/40 transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-950/40 transition-all cursor-pointer whitespace-nowrap"
           title="Chat on WhatsApp"
         >
           <div className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center">
@@ -177,7 +179,7 @@ export const FloatingContactBar: React.FC = () => {
             setCbSuccessRef(null);
             setShowCallbackPopup(true);
           }}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 shadow-md shadow-blue-950/40 transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 shadow-md shadow-blue-950/40 transition-all cursor-pointer whitespace-nowrap"
           title="Schedule an instant callback"
         >
           <div className="w-7 h-7 rounded-full bg-white/20 text-white flex items-center justify-center">
@@ -204,8 +206,8 @@ export const FloatingContactBar: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                  <Phone className="w-5 h-5" />
+                <div className="w-9 h-9 rounded-xl bg-[#E53935] text-white flex items-center justify-center shadow-xs">
+                  <Phone className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <h3 className="font-heading font-bold text-slate-900 text-sm">
@@ -218,7 +220,7 @@ export const FloatingContactBar: React.FC = () => {
               </div>
               <button
                 onClick={() => setShowCallPopup(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                 aria-label="Close call modal"
               >
                 <X className="w-4 h-4" />
@@ -233,39 +235,39 @@ export const FloatingContactBar: React.FC = () => {
             <div className="space-y-2.5 mb-4">
               {/* Number 1 */}
               <a
-                href={`tel:+91${COMPANY_DETAILS.phone1Raw}`}
-                className="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 transition-all group"
+                href={COMPANY_DETAILS.phone1Tel}
+                className="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-red-50/60 border border-slate-200 hover:border-[#E53935]/50 transition-all group"
               >
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-blue-600 block">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-[#E53935] block">
                     Line 1 (Primary Operations)
                   </span>
-                  <span className="font-mono text-sm font-bold text-slate-900 group-hover:text-blue-700">
+                  <span className="font-mono text-sm font-bold text-slate-900 group-hover:text-[#C62828]">
                     +91 98678 33456
                   </span>
                 </div>
-                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold group-hover:bg-blue-700">
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Call</span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#E53935] text-white text-xs font-bold group-hover:bg-[#C62828] transition-colors">
+                  <Phone className="w-3.5 h-3.5 text-white" />
+                  <span>Call Now</span>
                 </span>
               </a>
 
               {/* Number 2 */}
               <a
-                href={`tel:+91${COMPANY_DETAILS.phone2Raw}`}
-                className="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition-all group"
+                href={COMPANY_DETAILS.phone2Tel}
+                className="w-full flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-red-50/60 border border-slate-200 hover:border-[#E53935]/50 transition-all group"
               >
                 <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-emerald-600 block">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 group-hover:text-[#E53935] block">
                     Line 2 (Secondary Line)
                   </span>
-                  <span className="font-mono text-sm font-bold text-slate-900 group-hover:text-emerald-700">
+                  <span className="font-mono text-sm font-bold text-slate-900 group-hover:text-[#C62828]">
                     +91 99873 24798
                   </span>
                 </div>
-                <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold group-hover:bg-emerald-700">
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>Call</span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#E53935] text-white text-xs font-bold group-hover:bg-[#C62828] transition-colors">
+                  <Phone className="w-3.5 h-3.5 text-white" />
+                  <span>Call Now</span>
                 </span>
               </a>
             </div>
