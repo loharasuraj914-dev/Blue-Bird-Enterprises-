@@ -55,6 +55,10 @@
     <script>
       window.__LOAD_GH_FALLBACK = function () {
         if (window.__GH_FALLBACK_LOADED__ || window.__BLUEBIRD_MOUNTED__) return;
+        // Never load the prebuilt static fallback when Vite dev server (@vite/client) is active
+        if (document.querySelector('script[src*="@vite/client"]')) return;
+        // Never load the fallback when Vite production build has already injected /assets/index-*.js
+        if (document.querySelector('script[src*="/assets/index-"]')) return;
         window.__GH_FALLBACK_LOADED__ = true;
         window.__RAW_GH_PAGES__ = true;
         var link = document.createElement('link');
@@ -67,19 +71,11 @@
         document.body.appendChild(script);
       };
     </script>
-    <script type="module" crossorigin src="/Blue-Bird-Enterprises-/assets/index-CsSGDmWQ.js"></script>
-    <link rel="stylesheet" crossorigin href="/Blue-Bird-Enterprises-/assets/index-Cq-L2i2H.css">
+    <script type="module" crossorigin src="/Blue-Bird-Enterprises-/assets/index-DPEJYHcq.js"></script>
+    <link rel="stylesheet" crossorigin href="/Blue-Bird-Enterprises-/assets/index-BcqnOe5g.css">
   </head>
   <body class="bg-slate-50 text-slate-800 antialiased font-sans selection:bg-blue-600 selection:text-white">
     <div id="root"></div>
-    <script>
-      setTimeout(function () {
-        var root = document.getElementById('root');
-        if (!window.__BLUEBIRD_MOUNTED__ && root && root.children.length === 0 && window.__LOAD_GH_FALLBACK) {
-          window.__LOAD_GH_FALLBACK();
-        }
-      }, 1200);
-    </script>
   </body>
 </html>
 
