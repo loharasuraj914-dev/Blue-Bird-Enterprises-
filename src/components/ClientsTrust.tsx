@@ -2,9 +2,11 @@ import React from 'react';
 import { Building, ShieldCheck, CheckCircle2, FileCheck2, Scale, Clock } from 'lucide-react';
 import { CLIENTS_LIST } from '../data/companyData.ts';
 
+export const CLIENTS_SECTION_CLASSES = 'hidden md:block py-12 lg:py-16 bg-white border-b border-slate-200';
+
 export const ClientsTrust: React.FC = () => {
   return (
-    <section id="clients" className="py-12 lg:py-16 bg-white border-b border-slate-200">
+    <section id="clients" className={CLIENTS_SECTION_CLASSES}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}

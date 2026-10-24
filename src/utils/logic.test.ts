@@ -267,4 +267,11 @@ test('COMPANY_DETAILS callButtonConfig and tel links match exact Call Now button
   assert.equal(COMPANY_DETAILS.phone2Tel, 'tel:+919987324798');
 });
 
-
+test('Industrial Client Relationships section is hidden on mobile and visible on tablet/laptop/desktop while preserving all client content', async () => {
+  const { CLIENTS_LIST } = await import('../data/companyData.ts');
+  const { CLIENTS_SECTION_CLASSES } = await import('../components/ClientsTrust.tsx');
+  const classTokens = CLIENTS_SECTION_CLASSES.split(/\s+/);
+  assert.ok(classTokens.includes('hidden'), 'Section must have "hidden" class for mobile screens');
+  assert.ok(classTokens.includes('md:block'), 'Section must have "md:block" class for tablets, laptops, and desktops');
+  assert.ok(CLIENTS_LIST.length >= 6, 'All industrial client relationship records must remain preserved');
+});
